@@ -1,0 +1,245 @@
+
+/* MAPPING TIME-SERIES EVAPOTRANSPIRATION FOR AGRICULTURAL APPLICATIONS
+A CASE STUDY IN GUIDALQUIVIR RIVER BASIN
+Erik Bootsma - June 2020 - Uppsala University
+
+This script was developed in order to implement the S-SEBI model and estimate evapotranspiration (ET) in Southern Spain
+It is heavily based on the research paper by Danodia et al. (2019), but a full overview of references can be found at the bottom.
+*/
+
+
+/////// INITIALIZATION \\\\\\\
+// Create a list with your Landsat dates of interest. These must be correct, or dates will get mixed up and there will be errors!
+// All of them have to be in the same year because of CORINE image selection
+// Best not to specify a date range which is too large (max 1 year).
+var landsat_start_date = '2017-01-01';
+var landsat_end_date = ee.Date(landsat_start_date).advance(1, 'year');
+// Specify the landsat satellite, i.e. 'Landsat5', 'Landsat7' or 'Landsat8'
+var LANDSAT_EDITION = 'Landsat7';
+// Specify whether to use the radiance and brightness temperature as stored in the GEE data catalogue (true) or as computed in the script (false)
+// The results should be the same either way
+var LANDSAT_VARIABLES_PRE_COMPUTED = false;
+
+// Define a possible point of interest, like the flux station ES-Cnd
+var station_location = ee.Geometry.Point([-3.227659, 37.914998]);
+var EU_Basins = ee.FeatureCollection('users/erikjan22/EU_Basins');
+var Guadalquivir_basin = EU_Basins.filter(ee.Filter.eq('country', 'ES')).filter(ee.Filter.eq('nameText', 'GUADALQUIVIR'))
+  .first().geometry();
+// Since the Landsat images overlap at the edges, we don't need the images that only hit the border area of the roi
+var GBbuffered = Guadalquivir_basin.simplify(100).buffer(-40000);
+// Define the region of interest (roi)
+// var RadiusRoi = 100000;
+// var roi = station_location.buffer(RadiusRoi);
+var roi = Guadalquivir_basin;
+// define the region for which the landsat images will be selected
+var roi_landsat = GBbuffered;
+
+// Define the maximum allowed cloud cover for images
+var max_cloud_cover = 90;
+
+// Determine the size of the border of Landsat images which should be cut
+// Be aware, I am considering the geometry of the image, which often extends outside of the actual image
+// 8000 is a good maximum size, whereby the edge pixels are all removed, but adjacent images are still slightly overlapping
+// A buffer of 0 is not possible, so if you want no buffer, just put this vlaue very small (e.g. at 1)
+var buffer_size = 1;
+
+var max_elevation_level = 850;  // Pixels which elevation above this will be masked
+var max_slope_level = 20;  // Pixels with a slope above this will be masked  
+
+// specify type of corine masking (strict or not-strict)
+var CORINEmaskingVersion = "version1";
+
+// Around the number of elements which will be present in the subset.
+// Remember: pixels which are masked are dropped. 
+// This means that if half of the roi is masked, the number of actually exported values is about half of that specified here.
+var sample_size  = 100500;
+var fraction_threshold = 0.01; // the fraction of the pixels which needs to be valid
+var DriveFolder = 'GEE_exports';
+
+
+
+/////// DATA \\\\\\\
+// Find the current year
+var CurrentYearStr = landsat_start_date.slice(0,4);
+// Convert the current year variable from string type to integer type
+var CurrentYearInt = parseInt(CurrentYearStr, '');
+
+
+// Import the necessary functions defined in another script.
+var VARIOUS_FUNCTIONS = require('users/erikjan22/Evapotranspiration:Main project/A. Various functions');
+var landsat_collection = VARIOUS_FUNCTIONS.LANDSATDATA(LANDSAT_EDITION, LANDSAT_VARIABLES_PRE_COMPUTED, landsat_start_date, landsat_end_date, roi_landsat, max_cloud_cover, buffer_size);
+print('Collection of Landsat images before processing:', landsat_collection);
+
+// Mask unwanted pixels and remove landsat images which don't have anough valid (i.e. unmasked) pixels
+landsat_collection = VARIOUS_FUNCTIONS.IMAGE_PIXEL_MASKING(CORINEmaskingVersion, landsat_collection, roi, CurrentYearInt, max_elevation_level, max_slope_level, fraction_threshold);
+
+// Use CORINE dataset
+var CORINE = ee.ImageCollection("COPERNICUS/CORINE/V20/100m");
+// Select a CORINE image which is only used for visualization later on, not during the computational part
+var CORINEyear = '2000';
+var CORINEimage = CORINE.filterMetadata('system:index', 'equals', CORINEyear).first();
+// Change the labeling system of CORINE to reduce the 45 classes to only 5
+var artificial_surfaces          = CORINEimage.gte(100).and(CORINEimage.lt(200)).multiply(1);
+var agricultural_areas           = CORINEimage.gte(200).and(CORINEimage.lt(300)).multiply(2);
+var forest_and_seminatural_areas = CORINEimage.gte(300).and(CORINEimage.lt(400)).multiply(3);
+var wetlands                     = CORINEimage.gte(400).and(CORINEimage.lt(500)).multiply(4);
+var water_bodies                 = CORINEimage.gte(500).and(CORINEimage.lt(600)).multiply(5);
+var CORINEimageNewLabels = artificial_surfaces.add(agricultural_areas).add(forest_and_seminatural_areas).add(wetlands).add(water_bodies);
+
+
+
+///// COMPUTE PRODUCTS \\\\\
+
+// Add the water vapor band to all the landsat images
+landsat_collection = VARIOUS_FUNCTIONS.WATERVAPOR_SURFTEMP(landsat_collection);
+// Add additional variables to all the landsat images
+landsat_collection = VARIOUS_FUNCTIONS.VARIABLES(landsat_collection);
+// Compute all the necessary products
+landsat_collection = landsat_collection
+  .map(VARIOUS_FUNCTIONS.NDVI)
+  .map(VARIOUS_FUNCTIONS.ALBEDO);
+if (LANDSAT_EDITION == 'Landsat5' || LANDSAT_EDITION == 'Landsat7') {
+  landsat_collection = landsat_collection
+    .map(VARIOUS_FUNCTIONS.LSE_single_band)
+    .map(VARIOUS_FUNCTIONS.LANDSURFTEMP_MONO);
+}
+else if (LANDSAT_EDITION == 'Landsat8') {
+  landsat_collection = landsat_collection
+    .map(VARIOUS_FUNCTIONS.LSE_two_bands)
+    .map(VARIOUS_FUNCTIONS.LANDSURFTEMP_SPLIT);
+}
+else {
+  // Check that a correct Landsat edition has been chosen
+  throw 'Error: To create a collection of Landsat images the user needs to specify an edition (i.e. "Landsat5", "Landsat7" or "Landsat8")';
+}
+  
+print('Collection of Landsat images after processing:', landsat_collection);
+
+
+///////  ALBEDO-LST RANDOM DATA SAMPLING  \\\\\\\
+
+var DataAlbedoVsLTS = function(LandsatCollection) {
+  // Exports a random sample of data points (albedo and LST values) for each of the images in the Landsat image collection
+  // Force the list of images to the correct GEE type
+  LandsatCollection = ee.ImageCollection(LandsatCollection);
+  var band1 = 'Albedo';
+  var band2 = 'Surface_Temperature';
+  var LandsatCollectionData = LandsatCollection.map(function(image){
+    // Collection the ID of the the current Landsat image
+    var ImageID = image.get('LANDSAT_SCENE_ID');   
+    var percentage_valid_pixels = ee.Number(100).subtract(ee.Number.parse(image.get('CLOUD_COVER_LAND')));
+    // Select the sample size of the current image
+    var CurrentSampleSize = ee.Number(sample_size).divide(image.get('fraction_valid_pixels')).int();
+    // Select a random sample of data points from the image
+    var Sample = image.select([band1, band2])
+      .sample({
+        region: image.geometry(), 
+        scale: 30,
+        numPixels: CurrentSampleSize
+      }).map(function(datapoint) {
+        return datapoint.set({'LANDSAT_SCENE_ID':ImageID});
+      });
+    return Sample;
+  });
+  return LandsatCollectionData.flatten();
+};
+
+var DATA = DataAlbedoVsLTS(landsat_collection);
+
+// Export the sample
+Export.table.toDrive({
+  collection: DATA,
+  description: 'Export_S-SEBI_sample_data_L7_'.concat(CurrentYearStr),
+  folder: DriveFolder,
+  fileNamePrefix: 'S-SEBI_sample_data_L7_'.concat(CurrentYearStr),
+  fileFormat: 'CSV'
+});
+print('First data point:', DATA.first());
+print('Go to "Task" tab on the top right to start Export tasks.'); 
+
+
+
+/////// MAP VISUALIZATION \\\\\\\
+
+// Geometry objects
+Map.addLayer(roi, {color:'blue'}, 'Region of interest', false, 0.5);
+
+// Select one image to be visualized
+var VisImage = landsat_collection.first();
+print('Image chosen for visualization:', VisImage);
+
+// Define the visualization parameters.
+var visParamsLandsat = {bands: ['R_p', 'G_p', 'B_p'], max: 0.3};  // the p bands are for surface reflection
+var visParamsAlbedo = {min:0, max:1.0, palette: ['#ffdae0', '#ff8da1', '#cd00cd', '#b300b3', '#9a009a', '#800080', '#670067', '#4d004d', '#340034']};  // pink to purple
+var visParamsLSE = {min:0.9, max:1.0, palette: ['#ffdae0', '#ff8da1', '#cd00cd', '#b300b3', '#9a009a', '#800080', '#670067', '#4d004d', '#340034']};  // pink to purple
+var visParamsTemp = {min:273.15, max:343.15, palette: ['#0000FF', '#00FF00', '#FF0000']}; // Blue, Green, Red
+var visParamsWaterVapor = {min:1.0, max:2.0, palette: ['#FF0000', '#00FF00', '#0000FF']}; // Red, Green, Blue
+var CORINEpaletteString = "E6004D,FF0000,CC4DF2,CC0000,E6CCCC,E6CCE6,A600CC,A64DCC,FF4DFF,FFA6FF,FFE6FF,FFFFA8,FFFF00,E6E600,E68000,F2A64D,E6A600,E6E64D,FFE6A6,FFE64D,E6CC4D,F2CCA6,80FF00,00A600,4DFF00,CCF24D,A6FF80,A6E64D,A6F200,E6E6E6,CCCCCC,CCFFCC,000000,A6E6CC,A6A6FF,4D4DFF,CCCCFF,E6E6FF,A6A6E6,00CCF2,80F2E6,00FFA6,A6FFE6,E6F2FF";
+var CORINEpaletteString = CORINEpaletteString.split(',');
+var NewCORINEpalette = ['FF0000','FF4DFF','E6E600','FFE6A6','00A600'];
+
+// Land use classes
+Map.addLayer(CORINEimage, {min: 0, max: 999, palette: CORINEpaletteString}, 'CORINE (original)', false);
+Map.addLayer(CORINEimageNewLabels, {min:1, max:5, palette:NewCORINEpalette}, 'CORINE (new classes)', false);
+
+// Landsat image and derivative variables
+Map.addLayer(VisImage.select(['R_p', 'G_p', 'B_p']), visParamsLandsat, 'Landsat image', false);
+Map.addLayer(VisImage.select('Water_vapor'), visParamsWaterVapor, 'Water vapor', false);
+Map.addLayer(VisImage.select('Albedo'), visParamsAlbedo, 'Albedo', false);
+Map.addLayer(VisImage.select('T-1_bt'), visParamsTemp, 'Landsat Brightness Temp', false);
+Map.addLayer(VisImage.select('T-1_lse'), visParamsLSE, 'Landsat Surface Emissivity', false);
+Map.addLayer(VisImage.select('Surface_Temperature'), visParamsTemp, 'Landsat LST', false);
+
+
+
+/// OLD CODE \\\
+
+var ExportAlbedoVsLTS_OLD = function(LandsatCollection) {
+  // Exports a random sample of data points (albedo and LST values) for each of the images in the Landsat image collection
+  // Force the list of images to the correct GEE type
+  var LandsatList = ee.ImageCollection(LandsatCollection).toList(22);
+  var band1 = 'Albedo';
+  var band2 = 'Surface_Temperature';
+  var SetProperties = function(DataPoints, LANDSAT_SCENE_ID, DATE) {
+      DataPoints = DataPoints.map(function(datapoint) {
+        return datapoint.set({'LANDSAT_SCENE_ID':LANDSAT_SCENE_ID, 'DATE':DATE});
+      });
+  return DataPoints;
+  };
+  var nr_images = LandsatList.size().getInfo();
+  // Use a for loop to export all images in the list one by one
+  // This for loop makes extensive usage of the list of string values {landsat_dates} created in the first section
+  for (var n=0; n<nr_images; n++) {
+    // Select the current image
+    var Image = ee.Image(LandsatList.get(n));
+    // Collection information about the current image
+    var ImageDate = ee.String(Image.get('DATE_ACQUIRED'));
+    var ImageID = Image.get('LANDSAT_SCENE_ID');
+    var percentage_valid_pixels = ee.Number.parse(Image.get('CLOUD_LEVEL_STATION'));
+    var DateString = ImageDate.getInfo(); // Use with caution!
+    // Select the sample size of the current image
+    var CurrentSampleSize = ee.Number(sample_size).multiply(100).divide(percentage_valid_pixels).int();
+    // Select a random sample of data points from the image
+    var Sample = Image.select([band1, band2]).sample({
+      region: roi, 
+      scale: 30,
+      numPixels: CurrentSampleSize
+    });
+    Sample = SetProperties(Sample, ImageDate, ImageID);
+    // Export the sample
+    Export.table.toDrive(Sample, DateString.concat('_Export_sample_data'),
+      DriveFolder, DateString.concat('_sample_data'));
+  }
+  print('Go to "Task" tab on the top right to start Export tasks.');  
+  return LandsatCollection;
+};
+
+
+// OLD CODE
+
+/*.filterMetadata('LANDSAT_SCENE_ID', 'equals', 'LT52000332006028MTI00');
+   2006-03-08 --- 70% cloud --- LT52010332006067MTI00
+   2006-01-28 --- 29% cloud --- LT52000332006028MTI00
+   2006-01-28 --- 86% cloud --- LT52000342006028MTI00
+   2006-04-25 --- ..% cloud --- LT52010332006115MTI00*/
+

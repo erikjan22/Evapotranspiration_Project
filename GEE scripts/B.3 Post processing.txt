@@ -1,0 +1,137 @@
+
+
+/////// INITIALIZATION \\\\\\\
+// Create a list with your Landsat dates of interest. These must be correct, or dates will get mixed up and there will be errors!
+var landsat_start_date = '2010-01-01';
+var landsat_end_date = ee.Date(landsat_start_date).advance(1, 'month');
+var LANDSAT_EDITION = 'Landsat5';
+
+// Define a possible point of interest, like the flux station ES-Cnd
+var poi  = ee.Geometry.Point([-3.227659, 37.914998]);
+//var RadiusRoi = 50000;
+//var roi = station_location.buffer(RadiusRoi);
+var EU_Basins = ee.FeatureCollection('users/erikjan22/EU_Basins');
+var Guadalquiver_basin = EU_Basins.filter(ee.Filter.eq('country', 'ES')).filter(ee.Filter.eq('nameText', 'GUADALQUIVIR')).first()
+  // Take the geometry and simplify it (to make computations easier)
+  .geometry().simplify(250);
+// Since the Landsat images overlap at the edges, we don't need the images that only hit the border area of the roi
+var GBbuffered = Guadalquiver_basin.buffer(-40000);
+// Define the region of interest (roi)
+var roi = Guadalquiver_basin;
+// define the region for which the landsat images will be selected
+var roi_landsat = GBbuffered;
+
+// Determine the size of the border of Landsat images which should be cut
+// Be aware, I am considering the geometry of the image, which often extends outside of the actual image
+// 8000 is a good maximum size, whereby the edge pixels are all removed, but adjacent images are still slightly overlapping
+// A buffer of 0 is not possible, so if you want no buffer, just put this vlaue very small (e.g. at 1)
+var buffer_size = 1;// FILTER OUT UNWANTED PIXELS
+
+var imageProjection = 'EPSG:32630';
+var imageScale = 30;
+var max_cloud_cover = 90;
+
+
+/////// DATA \\\\\\\
+// Find the current year
+var CurrentYearStr = landsat_start_date.slice(0,4);
+// Convert the current year variable from string type to integer type
+var CurrentYearInt = parseInt(CurrentYearStr, '');
+// Define Landsat edition indicator
+var EditionIndicator;
+if (LANDSAT_EDITION == 'Landsat5') {
+  EditionIndicator = 'L5';
+}
+else if (LANDSAT_EDITION == 'Landsat7') {
+  EditionIndicator = 'L7';
+}
+else if (LANDSAT_EDITION == 'Landsat8') {
+  EditionIndicator = 'L8';
+}
+
+// Import the necessary functions defined in another script.
+var VARIOUS_FUNCTIONS = require('users/erikjan22/Evapotranspiration:Main project/A. Various functions');
+var landsat_collection = VARIOUS_FUNCTIONS.LANDSATDATA(LANDSAT_EDITION, false, landsat_start_date, landsat_end_date, roi_landsat, max_cloud_cover, buffer_size);
+
+print('landsat_collection', landsat_collection);
+
+landsat_collection = landsat_collection.toList(999);
+/*Map.addLayer(ee.Image(landsat_collection.get(0)), {}, '...', false);
+Map.addLayer(ee.Image(landsat_collection.get(1)), {}, '...', false);
+Map.addLayer(ee.Image(landsat_collection.get(2)), {}, '...', false);*/
+
+Map.addLayer(roi, {'color':'blue'}, 'Guadalquivir basin', false);
+Map.addLayer(poi, {}, 'poi', false);
+
+var visParamsET = {min: 0, max: 6, palette: ['#FF0000', '#00FF00', '#0000FF']}; // Red, Green, Blue
+print('S-SEBI results:', SSEBI_results);
+var Collection = SSEBI_results.select("Daily_Evapotranspiration").toList(999);
+for(var x = 0; x<12;x++) {
+  Map.addLayer(ee.Image(Collection.get(x)).clip(roi), visParamsET, "2017-".concat(x+1), false);
+}
+
+print('Seasonal_ET', Seasonal_ET);
+Seasonal_ET = Seasonal_ET
+  .filterMetadata('landsat_edition', 'equals', EditionIndicator)
+  .filterMetadata('year', 'equals', CurrentYearInt)
+  .toList(9999);
+Map.addLayer(ee.Image(Seasonal_ET.get(0)).select('Daily_Evapotranspiration'), visParamsET, CurrentYearStr+'-S', false);
+Map.addLayer(ee.Image(Seasonal_ET.get(1)).select('Daily_Evapotranspiration'), visParamsET, CurrentYearStr+'-W', false);
+
+// Create a legend
+// set position of panel
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+ 
+// Create legend title
+var legendTitle = ui.Label({
+  value: 'Daily ET (mm)',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '18px',
+    margin: '0 0 4px 0',
+    padding: '0'
+    }
+});
+
+ // Add the title to the panel
+legend.add(legendTitle); 
+
+// create the legend image
+var lon = ee.Image.pixelLonLat().select('latitude');
+var gradient = lon.multiply((visParamsET.max-visParamsET.min)/100.0).add(visParamsET.min);
+var legendImage = gradient.visualize(visParamsET);
+
+// create text on top of legend
+var panel = ui.Panel({
+    widgets: [
+      ui.Label(visParamsET['max'])
+    ],
+  });
+
+legend.add(panel);
+  
+// create thumbnail from the image
+var thumbnail = ui.Thumbnail({
+  image: legendImage, 
+  params: {bbox:'0,0,10,100', dimensions:'10x200'},  
+  style: {padding: '1px', position: 'bottom-center'}
+});
+
+// add the thumbnail to the legend
+legend.add(thumbnail);
+
+// create text on top of legend
+var panel = ui.Panel({
+    widgets: [
+      ui.Label(visParamsET['min'])
+    ],
+  });
+
+legend.add(panel);
+
+Map.add(legend);

@@ -1,0 +1,1491 @@
+
+
+
+// ---------------------------------------------------- \\
+// --------------- LANDSAT DATA SECTION --------------- \\
+// ---------------------------------------------------- \\
+
+///////  SPECTRAL RADIANCE, SPECTRAL REFLECTANCE AND BRIGHTNESS TEMPERATURE  \\\\\\\
+// Compute the spectral radiance from the thermal bands in the image
+// Compute the spectral reflectance for spectral bands in the image
+// Compute the theoretical temperature of a black body in thermal equilibrium with its surroundings
+
+var LANDSAT_5_VARIABLES = function(image) {
+  /// SPECTRAL RADIANCE \\\
+  // Retrieve addition and multiplication constants from the image properties
+  var T1_ML = ee.Number(image.get('RADIANCE_MULT_BAND_6'));
+  var T1_AL = ee.Number(image.get('RADIANCE_ADD_BAND_6'));
+  // Only compute the spectral radiance (L) for the thermal band
+  // The spectral radiance of other bands is not required later on
+  var T1_l = (image.select('T-1').multiply(T1_ML)).add(T1_AL);
+  /// SPECTRAL REFLECTANCE \\\  
+  // Retrieve addition and multiplication constants from the image properties
+  var Mp_Blue = ee.Number(image.get('REFLECTANCE_MULT_BAND_1'));
+  var Ap_Blue = ee.Number(image.get('REFLECTANCE_ADD_BAND_1')); 
+  var Mp_Green = ee.Number(image.get('REFLECTANCE_MULT_BAND_2'));
+  var Ap_Green = ee.Number(image.get('REFLECTANCE_ADD_BAND_2')); 
+  var Mp_Red = ee.Number(image.get('REFLECTANCE_MULT_BAND_3'));
+  var Ap_Red = ee.Number(image.get('REFLECTANCE_ADD_BAND_3')); 
+  var Mp_NIR = ee.Number(image.get('REFLECTANCE_MULT_BAND_4'));
+  var Ap_NIR = ee.Number(image.get('REFLECTANCE_ADD_BAND_4'));  
+  var Mp_SWIR1 = ee.Number(image.get('REFLECTANCE_MULT_BAND_5'));
+  var Ap_SWIR1 = ee.Number(image.get('REFLECTANCE_ADD_BAND_5'));  
+  var Mp_SWIR2 = ee.Number(image.get('REFLECTANCE_MULT_BAND_7'));
+  var Ap_SWIR2 = ee.Number(image.get('REFLECTANCE_ADD_BAND_7'));  
+  // Find the sun elevation angle and convert the value from degrees to radians.
+  var sol_angle = ee.Number(image.get('SUN_ELEVATION')).multiply(ee.Number(Math.PI).divide(180));
+  var sin_sol_angle = sol_angle.sin(); // take the sinusiod of the solar angle
+  // Compute the spectral reflectance (p) for all visible, NIR and SWIR Landsat bands
+  var B_p     = image.select('B')     .multiply(Mp_Blue)    .add(Ap_Blue)   .divide(sin_sol_angle);
+  var G_p     = image.select('G')     .multiply(Mp_Green)   .add(Ap_Green)  .divide(sin_sol_angle);
+  var R_p     = image.select('R')     .multiply(Mp_Red)     .add(Ap_Red)    .divide(sin_sol_angle);
+  var NIR_p   = image.select('NIR')   .multiply(Mp_NIR)     .add(Ap_NIR)    .divide(sin_sol_angle);
+  var SWIR1_p = image.select('SWIR-1').multiply(Mp_SWIR1)   .add(Ap_SWIR1)  .divide(sin_sol_angle);
+  var SWIR2_p = image.select('SWIR-2').multiply(Mp_SWIR2)   .add(Ap_SWIR2)  .divide(sin_sol_angle);
+  /// BRIGHTNESS TEMPERATURE \\\    
+  // Create an image band of the correct size, filled with only 0 values
+  var empty = B_p.multiply(0);
+  // Retrieve values for constants from the image properties
+  var T1_K1 = empty.add(ee.Number(image.get('K1_CONSTANT_BAND_6')));
+  var T1_K2 = empty.add(ee.Number(image.get('K2_CONSTANT_BAND_6')));
+  // Compute the brightness temperature (bt), use the spectral radiance of the thermal bands (l)
+  var denominator = ((T1_K1.divide(T1_l)).add(1)).log();
+  var T1_bt = T1_K2.divide(denominator);
+  /// RETURN VARIABLES \\\
+  // Add the variables as bands to the image. Out of the original (DN-value) bands, only keep the quality bands
+  var result = image.select([])
+    .addBands(B_p.rename('B_p')).addBands(G_p.rename('G_p')).addBands(R_p.rename('R_p'))
+    .addBands(NIR_p.rename('NIR_p')).addBands(SWIR1_p.rename('SWIR-1_p')).addBands(SWIR2_p.rename('SWIR-2_p'))
+    .addBands(T1_bt.rename('T-1_bt'));
+  return result.toFloat().addBands(image.select(['QA']));
+};
+
+
+var LANDSAT_7_VARIABLES = function(image) {
+  /// SPECTRAL RADIANCE \\\
+  // Retrieve addition and multiplication constants from the image properties
+  var T1_ML = ee.Number(image.get('RADIANCE_MULT_BAND_6_VCID_2'));
+  var T1_AL = ee.Number(image.get('RADIANCE_ADD_BAND_6_VCID_2'));
+  // Only compute the spectral radiance (L) for the thermal band
+  // The spectral radiance of other bands is not required later on
+  var T1_l = (image.select('T-1').multiply(T1_ML)).add(T1_AL);  
+  /// SPECTRAL REFLECTANCE \\\ 
+  // Retrieve addition and multiplication constants from the image properties
+  var Mp_Blue = ee.Number(image.get('REFLECTANCE_MULT_BAND_1'));
+  var Ap_Blue = ee.Number(image.get('REFLECTANCE_ADD_BAND_1')); 
+  var Mp_Green = ee.Number(image.get('REFLECTANCE_MULT_BAND_2'));
+  var Ap_Green = ee.Number(image.get('REFLECTANCE_ADD_BAND_2')); 
+  var Mp_Red = ee.Number(image.get('REFLECTANCE_MULT_BAND_3'));
+  var Ap_Red = ee.Number(image.get('REFLECTANCE_ADD_BAND_3')); 
+  var Mp_NIR = ee.Number(image.get('REFLECTANCE_MULT_BAND_4'));
+  var Ap_NIR = ee.Number(image.get('REFLECTANCE_ADD_BAND_4'));  
+  var Mp_SWIR1 = ee.Number(image.get('REFLECTANCE_MULT_BAND_5'));
+  var Ap_SWIR1 = ee.Number(image.get('REFLECTANCE_ADD_BAND_5'));  
+  var Mp_SWIR2 = ee.Number(image.get('REFLECTANCE_MULT_BAND_7'));
+  var Ap_SWIR2 = ee.Number(image.get('REFLECTANCE_ADD_BAND_7'));  
+  // Find the sun elevation angle and convert the value from degrees to radians.
+  var sol_angle = ee.Number(image.get('SUN_ELEVATION')).multiply(ee.Number(Math.PI).divide(180));
+  var sin_sol_angle = sol_angle.sin(); // take the sinusiod of the solar angle
+  // Compute the spectral reflectance (p) for all visible, NIR and SWIR Landsat bands
+  var B_p     = image.select('B')     .multiply(Mp_Blue)    .add(Ap_Blue)   .divide(sin_sol_angle);
+  var G_p     = image.select('G')     .multiply(Mp_Green)   .add(Ap_Green)  .divide(sin_sol_angle);
+  var R_p     = image.select('R')     .multiply(Mp_Red)     .add(Ap_Red)    .divide(sin_sol_angle);
+  var NIR_p   = image.select('NIR')   .multiply(Mp_NIR)     .add(Ap_NIR)    .divide(sin_sol_angle);
+  var SWIR1_p = image.select('SWIR-1').multiply(Mp_SWIR1)   .add(Ap_SWIR1)  .divide(sin_sol_angle);
+  var SWIR2_p = image.select('SWIR-2').multiply(Mp_SWIR2)   .add(Ap_SWIR2)  .divide(sin_sol_angle);
+  /// BRIGHTNESS TEMPERATURE \\\    
+  // Create an image band of the correct size, filled with only 0 values
+  var empty = B_p.multiply(0);
+  // Retrieve values for constants from the image properties
+  var T1_K1 = empty.add(ee.Number(image.get('K1_CONSTANT_BAND_6_VCID_2')));
+  var T1_K2 = empty.add(ee.Number(image.get('K2_CONSTANT_BAND_6_VCID_2')));
+  // Compute the brightness temperature (bt), use the spectral radiance of the thermal bands (l)
+  var denominator = ((T1_K1.divide(T1_l)).add(1)).log();
+  var T1_bt = T1_K2.divide(denominator);
+  /// RETURN VARIABLES \\\
+  // Add the variables as bands to an empty frame (no bands) of the original image. Out of the original (DN-value) bands, only keep the quality band
+  var result = image.select([])
+    .addBands(B_p.rename('B_p')).addBands(G_p.rename('G_p')).addBands(R_p.rename('R_p'))
+    .addBands(NIR_p.rename('NIR_p')).addBands(SWIR1_p.rename('SWIR-1_p')).addBands(SWIR2_p.rename('SWIR-2_p'))
+    .addBands(T1_bt.rename('T-1_bt'));
+  return result.toFloat().addBands(image.select(['QA']));
+};
+
+
+var LANDSAT_8_VARIABLES = function(image) {
+  /// SPECTRAL RADIANCE \\\
+  // Retrieve addition and multiplication constants from the image properties
+  var T1_ML = ee.Number(image.get('RADIANCE_MULT_BAND_10'));
+  var T1_AL = ee.Number(image.get('RADIANCE_ADD_BAND_10'));
+  var T2_ML = ee.Number(image.get('RADIANCE_MULT_BAND_11'));
+  var T2_AL = ee.Number(image.get('RADIANCE_ADD_BAND_11'));
+  // Only compute the spectral radiance (L) for the thermal bands
+  // The spectral radiance of other bands is not required
+  var T1_l = (image.select('T-1').multiply(T1_ML)).add(T1_AL);
+  var T2_l = (image.select('T-2').multiply(T2_ML)).add(T2_AL);
+  /// SPECTRAL REFLECTANCE \\\  
+  // Retrieve addition and multiplication constants from the image properties
+  var Mp_Blue = ee.Number(image.get('REFLECTANCE_MULT_BAND_2'));
+  var Ap_Blue = ee.Number(image.get('REFLECTANCE_ADD_BAND_2')); 
+  var Mp_Green = ee.Number(image.get('REFLECTANCE_MULT_BAND_3'));
+  var Ap_Green = ee.Number(image.get('REFLECTANCE_ADD_BAND_3')); 
+  var Mp_Red = ee.Number(image.get('REFLECTANCE_MULT_BAND_4'));
+  var Ap_Red = ee.Number(image.get('REFLECTANCE_ADD_BAND_4'));  
+  var Mp_NIR = ee.Number(image.get('REFLECTANCE_MULT_BAND_5'));
+  var Ap_NIR = ee.Number(image.get('REFLECTANCE_ADD_BAND_5'));  
+  var Mp_SWIR1 = ee.Number(image.get('REFLECTANCE_MULT_BAND_6'));
+  var Ap_SWIR1 = ee.Number(image.get('REFLECTANCE_ADD_BAND_6'));  
+  var Mp_SWIR2 = ee.Number(image.get('REFLECTANCE_MULT_BAND_7'));
+  var Ap_SWIR2 = ee.Number(image.get('REFLECTANCE_ADD_BAND_7'));  
+  // Find the sun elevation angle and convert the value from degrees to radians.
+  var sol_angle = ee.Number(image.get('SUN_ELEVATION')).multiply(ee.Number(Math.PI).divide(180));
+  var sin_sol_angle = sol_angle.sin(); // take the sinusiod of the solar angle
+  // Compute the spectral reflectance (p) for all visible, NIR and SWIR Landsat bands
+  var B_p     = image.select('B')     .multiply(Mp_Blue)    .add(Ap_Blue)   .divide(sin_sol_angle);
+  var G_p     = image.select('G')     .multiply(Mp_Green)   .add(Ap_Green)  .divide(sin_sol_angle);
+  var R_p     = image.select('R')     .multiply(Mp_Red)     .add(Ap_Red)    .divide(sin_sol_angle);
+  var NIR_p   = image.select('NIR')   .multiply(Mp_NIR)     .add(Ap_NIR)    .divide(sin_sol_angle);
+  var SWIR1_p = image.select('SWIR-1').multiply(Mp_SWIR1)   .add(Ap_SWIR1)  .divide(sin_sol_angle);
+  var SWIR2_p = image.select('SWIR-2').multiply(Mp_SWIR2)   .add(Ap_SWIR2)  .divide(sin_sol_angle);
+  /// BRIGHTNESS TEMPERATURE \\\ 
+  // Create an image band of the correct size, filled with only 0 values
+  var empty = B_p.multiply(0);
+  // Retrieve values for constants from the image properties
+  var T1_K1 = empty.add(ee.Number(image.get('K1_CONSTANT_BAND_10')));
+  var T1_K2 = empty.add(ee.Number(image.get('K2_CONSTANT_BAND_10')));
+  var T2_K1 = empty.add(ee.Number(image.get('K1_CONSTANT_BAND_11')));
+  var T2_K2 = empty.add(ee.Number(image.get('K2_CONSTANT_BAND_11')));
+  // Compute the brightness temperature (bt), use the spectral radiance of the thermal bands (l)
+  var denominator = ((T1_K1.divide(T1_l)).add(1)).log();
+  var T1_bt = T1_K2.divide(denominator);
+  denominator = ((T2_K1.divide(T2_l)).add(1)).log();
+  var T2_bt = T2_K2.divide(denominator);
+  /// RETURN VARIABLES \\\
+  // Add the variables as bands to the image. Out of the original (DN-value) bands, only keep the quality bands
+  return image.select(['QA'])
+    .addBands(B_p.rename('B_p')).addBands(G_p.rename('G_p')).addBands(R_p.rename('R_p'))
+    .addBands(NIR_p.rename('NIR_p')).addBands(SWIR1_p.rename('SWIR-1_p')).addBands(SWIR2_p.rename('SWIR-2_p'))
+    .addBands(T1_bt.rename('T-1_bt')).addBands(T2_bt.rename('T-2_bt'));
+};
+
+
+
+///////  LANDSAT IMAGES  \\\\\\\
+exports.LANDSATDATA = function(LandsatEdition, PreComputed, LandsatStartDate, LandsatEndDate, RegionOfInterest, MaxCloudCover, BufferSize) {
+  /*
+  
+    BufferSize [int]: The size of the border of Landsat images which will be cut off, due to low-quality pixels on the borders.
+  */
+  
+  // There are several Landsat image collections available within GEE
+  // These contain images pre-processed in different ways which will be used to produce the needed products
+  // 1) USGS Landsat [...] Collection 1 Tier 1 Raw Scenes
+  //    At-sensor radiance level spectral radiance (not the same as top-oif-atmosphere radiance!)
+  //    GEE Data Catalog page for Landsat 8: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1
+  // 2) USGS Landsat [...] Collection 1 Tier 1 TOA Reflectance
+  //    Calibrated top-of-atmosphere (TOA) reflectance
+  //    GEE Data Catalog page for Landsat 8: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_TOA
+  // 3) USGS Landsat [...] Surface Reflectance Tier 1
+  //    Surface reflectance and brightness temperature
+  //    GEE Data Catalog page for Landsat 8: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_SR
+  
+  // Due to the availability of these collections, we might not need to compute all the products for ourselves, as was done in by Nikam et al. (2016) and other studies
+  
+  // For more information on the different images and products available in the image collections, see these links:
+  // -) Landsat collection and tier system:
+  //    https://www.usgs.gov/land-resources/nli/landsat/landsat-collection-1?qt-science_support_page_related_con=1#qt-science_support_page_related_con
+  // -) Computing TOA radiance and TOA reflectance products from "Quantized and calibrated standard product pixel values (DN)":
+  //    https://www.usgs.gov/land-resources/nli/landsat/using-usgs-landsat-level-1-data-product
+  // -) Instruction manual for computing many of the products:
+  //    https://serc.carleton.edu/files/NAGTWorkshops/gis/activities2/student_handout_calculating_te.pdf
+  
+  // Abbreviations  
+  // B = Blue band                      NIR = Near-Infrared band                T-1 = Thermal band 1
+  // G = Green band                     SWIR-1 = Shortwave Infrared band 1      T-2 = Thermal band 2
+  // R = Red band                       SWIR-2 = Shortwave Infrared band 2  
+  // QA = Quality Assessment band       
+  
+  // _l stands for spectral radiance
+  // _p stands for Top-Of-Atmosphere (TOA) reflectance
+  // _bt stands for brightness temperature
+  // _pre stands for pre-computed, meaning that these products have been created by the Landsat team
+
+  // Choose the correct landsat collection
+  var landsat_collection_raw; var landsat_collection_p_pre; var landsat_collection_bt_pre;
+  if (LandsatEdition == 'Landsat5') {
+  /// LANDSAT 5 \\\
+  // 1) USGS Landsat 5 TM Collection 1 Tier 1 Raw Scenes
+  landsat_collection_raw = ee.ImageCollection("LANDSAT/LT05/C01/T1")
+    .map(function(image){
+      return image
+        .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B7', 'B6', 'BQA'],
+                ['B', 'G', 'R', 'NIR', 'SWIR-1', 'SWIR-2', 'T-1', 'QA']);
+    })
+    .map(LANDSAT_5_VARIABLES);
+  // 2) USGS Landsat 5 TM Collection 1 Tier 1 TOA Reflectance
+  landsat_collection_p_pre = ee.ImageCollection("LANDSAT/LT05/C01/T1_TOA")
+    .map(function(image){
+      return image
+        .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B7', 'BQA'],
+                ['B_p', 'G_p', 'R_p', 'NIR_p', 'SWIR-1_p', 'SWIR-2_p', 'QA']);
+    });
+      // 3) USGS Landsat 5 Surface Reflectance Tier 1
+  landsat_collection_bt_pre = ee.ImageCollection("LANDSAT/LT05/C01/T1_SR")
+    .map(function(image){
+      var BT_band =  image.select(['B6'], ['T-1_bt'])
+        // The brightness temperature needs to be divided by 10, since the pre-computed values provided by Landsat in the GEE data catalogue are a factor 10 too large
+        // (e.g. 2944.99 should really be 294.499 Kelvin)
+        .divide(10);
+      return image.select().addBands(BT_band);
+    });
+  }
+  else if (LandsatEdition == 'Landsat7') {
+  /// LANDSAT 7 \\\
+  /*There are two files/bands for Landsat 7 ETM+ band 6. Which one Band 61 and 62 use exactly the same detector, same
+    wavelength and bandwidth, but the gain is set differently, i.e., 61 is set to 'low' gain, and 62 is set to 'high' 
+    gain to maximize the instrument's 8 bit radiometric resolution without saturating the detectors. It makes sense, 
+    therefore, to use the band 61 (low gain mode) when surface brightness is high (e.g., desert), and band 62 (high gain
+    mode) when surface brightness is lower (e.g., vegetated areas). */
+  // 1) USGS Landsat 7 Collection 1 Tier 1 Raw Scenes
+  landsat_collection_raw = ee.ImageCollection("LANDSAT/LE07/C01/T1")
+    .map(function(image){
+      return image
+        .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B7', 'B6_VCID_2', 'BQA'],
+                ['B', 'G', 'R', 'NIR', 'SWIR-1', 'SWIR-2', 'T-1', 'QA']);
+    })
+    .map(LANDSAT_7_VARIABLES);
+  // 2) USGS Landsat 7 Collection 1 Tier 1 TOA Reflectance
+  landsat_collection_p_pre = ee.ImageCollection("LANDSAT/LE07/C01/T1_TOA")
+    .map(function(image){
+      return image
+        .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B7', 'BQA'],
+                ['B_p', 'G_p', 'R_p', 'NIR_p', 'SWIR-1_p', 'SWIR-2_p', 'QA']);
+    });
+  // 3) USGS Landsat 7 Surface Reflectance Tier 1
+  landsat_collection_bt_pre = ee.ImageCollection("LANDSAT/LE07/C01/T1_SR")
+    .map(function(image){
+      var BT_band =  image.select(['B6'], ['T-1_bt'])
+        // The brightness temperature needs to be divided by 10, since the pre-computed values provided by Landsat in the GEE data catalogue are a factor 10 too large
+        // (e.g. 2944.99 should really be 294.499 Kelvin)
+        .divide(10);
+      return image.select().addBands(BT_band);
+    });
+  }
+  else if (LandsatEdition == 'Landsat8') {
+  /// LANDSAT 8 \\\
+  // 1) USGS Landsat 8 Collection 1 Tier 1 Raw Scenes
+  landsat_collection_raw = ee.ImageCollection("LANDSAT/LC08/C01/T1")
+    .map(function(image){
+      return image
+        .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10', 'B11', 'BQA'],
+                ['B', 'G', 'R', 'NIR', 'SWIR-1', 'SWIR-2', 'T-1', 'T-2', 'QA']);
+    })
+    .map(LANDSAT_8_VARIABLES);
+  // 2) USGS Landsat 8 Collection 1 Tier 1 TOA Reflectance
+  landsat_collection_p_pre = ee.ImageCollection("LANDSAT/LC08/C01/T1_TOA")
+    .map(function(image){
+      return image
+        .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'BQA'],
+                ['B_p', 'G_p', 'R_p', 'NIR_p', 'SWIR-1_p', 'SWIR-2_p', 'QA']);
+    });
+  // 3) USGS Landsat 8 Surface Reflectance Tier 1
+  landsat_collection_bt_pre = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+    .map(function(image){
+      var BT_bands = image.select(['B10', 'B11'], ['T-1_bt', 'T-2_bt'])
+        // The brightness temperature needs to be divided by 10, since the pre-computed values provided by Landsat in the GEE data catalogue are a factor 10 too large
+        // (e.g. 2944.99 should really be 294.499 Kelvin)
+        .divide(10);
+      return image.select().addBands(BT_bands);
+    }); 
+  }
+  else {
+    // Check that a correct Landsat edition has been chosen
+    throw 'Error: To create a collection of Landsat images the user needs to specify an edition (i.e. "Landsat5", "Landsat7" or "Landsat8")';
+  }
+  
+  // SELECT THE PERSONALLY COMPUTED OR PRE_COMPUTED VERSION \\\
+  var landsat_collection;
+  if (PreComputed === false) {
+    // Use the personally computed variables
+    // Only select the relevant images from the Landsat collection
+    landsat_collection = landsat_collection_raw
+      // Retrieve the landsat images for the date range specified by the user
+    .filterDate(LandsatStartDate, LandsatEndDate)
+    // Retrieve the landsat images for the location specified by the user
+    .filterBounds(RegionOfInterest)
+    // Remove all images which have too much cloud cover
+    .filter(ee.Filter.lt('CLOUD_COVER', MaxCloudCover));
+  }
+  else if (PreComputed === true) {
+    // Use the pre-computed variables
+    // Only select the relevant images from the Landsat collection    
+    landsat_collection_p_pre = landsat_collection_p_pre
+      // Retrieve the landsat images for the date range specified by the user
+    .filterDate(LandsatStartDate, LandsatEndDate)
+    // Retrieve the landsat images for the location specified by the user
+    .filterBounds(RegionOfInterest)
+    // Remove all images which have too much cloud cover
+    .filter(ee.Filter.lt('CLOUD_COVER', MaxCloudCover));
+    landsat_collection_bt_pre = landsat_collection_bt_pre
+      // Retrieve the landsat images for the date range specified by the user
+    .filterDate(LandsatStartDate, LandsatEndDate)
+    // Retrieve the landsat images for the location specified by the user
+    .filterBounds(RegionOfInterest)
+    // Remove all images which have too much cloud cover
+    .filter(ee.Filter.lt('CLOUD_COVER', MaxCloudCover));
+    
+    // Select an attribute to combine the image collections on
+    var join_attribute = ee.Filter.equals({
+      leftField: 'system:time_start',
+      rightField: 'system:time_start'
+    });
+    // Create the join object
+    var InnerJoin = ee.Join.inner();
+    // Joint the first two image collections into one
+    landsat_collection = ee.ImageCollection(InnerJoin.apply(landsat_collection_p_pre, landsat_collection_bt_pre, join_attribute))
+      // Concatenate the matched images within the collection together into one image
+      .map(function(image){
+        return ee.Image.cat(image.get('primary'), image.get('secondary'));
+      });
+  }
+  else {
+    // Check that a valid argument has been provided by the user. This option should not occur.
+    throw 'Error: The second argument of the "LANDSATDATA" function should consists of a Boolean value to specify whether to use the pre-computed (true) or the personally computed (false) versions of the variables.';
+  }
+  // Cut off the edge of the image
+  landsat_collection = landsat_collection.map(function(image) {
+    // Cut out the border region, which has low-quality pixels, and return the result
+    return image.clip(image.geometry().buffer(-1*BufferSize));
+  });
+  // Return the result
+  return landsat_collection;
+};
+
+
+
+
+// Function to mask individual pixels due e.g. to cloudy or snowy conditions
+var LANDSAT_METEOROLOGICAL_MASKING = function(current_image, first_bit, second_bit, final_degree) {
+  // bitmask specifies qualities of pixels using bits. final_degree stands for highest allowed quality level
+  // Example: masking(5,6,2) removes clouded pixels by selecting cloud confidence (bits 5-6) and removing all with value above 2 (indicating 34-66 percent confidence of cloud)
+  var nr_bits = second_bit-first_bit+1;
+  var qa_band = current_image.select('QA');
+  var mask = qa_band.rightShift(first_bit).mod(Math.pow(2, nr_bits)).gt(final_degree);
+  return current_image.updateMask(mask.not());
+}; 
+
+
+
+///////  LANDSAT PRE-PROCESSING  \\\\\\\
+exports.IMAGE_PIXEL_MASKING = function(version, landsat_collection, roi, CurrentYear, MaxElevationLevel, MaxSlopeLevel, fraction_threshold) {
+  /*Def: Remove pixels from the Landsat images which are undesirable for some reason. This can be for a variety of reasons.
+  Args:
+    version [string]: Should be 'version1' or 'version2'
+    landsat_collection [ee.ImageCollection]: Collection of Landsat scenes
+    roi [Geometry]: ...
+    CurrentYear [int]: the current year of the Landsat scenes
+    MaxElevationLevel [int]: Pixels which elevation above this will be masked
+    MaxSlopeLevel [int]: Pixels with a slope above this will be masked  
+    fraction_threshold [float]: fraction of pixels in the Landsat scene which need to be valid for the scene to be remain in the collection
+  Returns:
+    landsat_collection [ee.ImageCollection]: resulting image collecions
+  */
+  // State the projection and the scale of the Landsat scenes
+  var imageProjection = 'EPSG:32630';
+  var imageScale = 30;
+  
+  // Create a water mask
+  var WaterMask = ee.Image('MODIS/MOD44W/MOD44W_005_2000_02_24')
+    .select('water_mask').not();
+    
+  // Retrieve data on the elevation (above sea level)
+  var Elevation = ee.Image("USGS/SRTMGL1_003")
+    // Set the elevation image to the same projection as other images
+    .reproject({crs: imageProjection, scale: imageScale});
+  // Create a slope image from the elevation image
+  var Slope = ee.Terrain.slope(Elevation);
+    
+  // Choose CORINE dataset
+  var CORINE = ee.ImageCollection("COPERNICUS/CORINE/V20/100m");
+  // CORINE has images for  the years: 1990, 2000, 2006, 2012, 2018
+  var PossibleCORINEyears = [1990, 2000, 2006, 2012, 2018];
+  // create some variables for use later on
+  var LastYear = 0; var YearsOfInterest = []; var i; var CORINEimage;
+  
+  // Check that the current data is recent enough for there to be a CORINE edition available
+  if (CurrentYear < PossibleCORINEyears[0]) {
+    throw 'Stop! Year of interest has to be 1990 or after.';
+  }
+  
+  for(i = 0; i < PossibleCORINEyears.length; i++){ 
+    var ThisYear = PossibleCORINEyears[i];
+    if (ThisYear == CurrentYear) {
+      YearsOfInterest = [CurrentYear];
+    }
+    else if (CurrentYear<ThisYear && CurrentYear>LastYear) {
+      YearsOfInterest = [LastYear, ThisYear];
+    }
+    // After 2018
+    else if (CurrentYear>ThisYear && i == PossibleCORINEyears.length-1) {
+      YearsOfInterest = [ThisYear];
+    }
+    LastYear = ThisYear;
+  }
+  
+  // Create an image which serves as a mask for 'unwanted' corine pixels (i.e. those with irrelevant land use code)
+  // This image will initially be completely filled with 0 or 1 values
+  var CORINEmaskStrict = CORINE.filterMetadata('system:index', 'equals', '1990').first().multiply(0).add(1);
+  var CORINEmaskNOTstrict = CORINE.filterMetadata('system:index', 'equals', '1990').first().multiply(0);
+  
+  // Replace those pixels which are not agricultural in all collected CORINE editions
+  for(i = 0; i < YearsOfInterest.length; i++){   
+    var CORINEyear = YearsOfInterest[i].toString();
+    CORINEimage = CORINE.filterMetadata('system:index', 'equals', CORINEyear).first();
+    // Only the pixels which are of agricultural types (i.e. CORINE code between 200 and 300)
+    var UpdateCORINEmask = CORINEimage.gte(200).and(CORINEimage.lt(300));
+    // Update the CORINE mask by putting all the 'unwanted pixels' to value 0
+    // NOTE: two different corine masks, the strict mask (for version 1) and the not-strict mask (for version 2)
+    CORINEmaskStrict = CORINEmaskStrict.multiply(UpdateCORINEmask);
+    CORINEmaskNOTstrict = CORINEmaskNOTstrict.or(UpdateCORINEmask);
+  }
+  
+  // CREATE SEVERAL FUNCTIONS
+  // Function to apply all the masks to all the Landsat scenes
+  var LANDSAT_PIXEL_MASKING = function(image) {
+    // Clip out the region of interest from the Landsat image
+    image = image.clip(roi)
+      // Mask out open water pixels
+      .updateMask(WaterMask)
+      // Filter out areas with a high elevation
+      .updateMask(Elevation.lte(MaxElevationLevel))
+      // Filter out areas with a high slope
+      .updateMask(Slope.lte(MaxSlopeLevel));
+    // Get rid of cloudy pixels
+    image = LANDSAT_METEOROLOGICAL_MASKING(image, 5, 6, 2);
+    // Get rid of shadows
+    image = LANDSAT_METEOROLOGICAL_MASKING(image, 7, 8, 2);
+    // Get rid of snowy pixels
+    image = LANDSAT_METEOROLOGICAL_MASKING(image, 9, 10, 2);
+    // return the Landsat scene after all the unwanted pixels have been removed
+    return image;
+  };  
+  // Register the number of remaining pixels
+  var PIXEL_COUNTING = function(image) {
+    // Count the number of unmasked pixels
+    var Nr_Unmasked_Pixels = image.select('B_p').reduceRegion({
+      reducer: ee.Reducer.count(),
+      geometry: image.geometry(),
+      scale: 30,
+      maxPixels: 1e9
+    }).get('B_p');
+    // Count the total number of pixels, masked or unmasked, in the image
+    var Nr_Pixels_Total = image.select('B_p').unmask().reduceRegion({
+      reducer: ee.Reducer.count(),
+      geometry: image.geometry(),
+      scale: 30,
+      maxPixels: 1e9
+    }).get('B_p');
+    // Find the percentage of unmasked pixels
+    var fraction_valid_pixels = ee.Number(Nr_Unmasked_Pixels).divide(Nr_Pixels_Total);    
+    return image.set({'nr_Unmasked_Pixels':Nr_Unmasked_Pixels, 'nr_Pixels_Total':Nr_Pixels_Total,
+      'fraction_valid_pixels':fraction_valid_pixels});
+  };
+  
+  // Apply all pre-processing operations to the Landsat images
+  landsat_collection = landsat_collection
+    // Sort the Landsat scenes by their date
+    .sort('DATE_ACQUIRED')
+    // Mask the unwanted pixels in all the Landsat scenes
+    .map(LANDSAT_PIXEL_MASKING);
+  // Apply the CORINE masking type depending on what the user has specified
+  if (version == 'version1') {
+    print('CORINE editions which will be used: ', YearsOfInterest, 'Applying the strictest version of CORINE masking');
+    landsat_collection = landsat_collection.map(function(image) {return image.updateMask(CORINEmaskStrict)})
+      // Count the remaining number of valid (i.e. unmasked pixels) in the Landsat scenes
+      .map(PIXEL_COUNTING)
+      // filter out all images which have less than a certain fraction of the total number of pixels unmasked (i.e. pixels with valid values)
+      .filterMetadata('fraction_valid_pixels', 'greater_than', fraction_threshold);  
+  }
+  else if (version == 'version2') {
+    print('CORINE editions which will be used: ', YearsOfInterest, 'NOT applying the strictest version of CORINE masking');
+    landsat_collection = landsat_collection.map(function(image) {return image.updateMask(CORINEmaskNOTstrict)});
+  }
+  else {
+    // Check that a correct corine masking type has been chosen
+    throw 'Error: Select one of the two possible corine masking versions (i.e. "version1" or "version2)';
+  }    
+  // return the result
+  return landsat_collection;
+};
+
+
+
+// --------------------------------------------------------------------------- \\
+// -------------------- S-SEBI EVAPOTRANSPIRATION SECTION -------------------- \\
+// --------------------------------------------------------------------------- \\
+
+exports.LANDSAT_EF = function(landsat_collection, EF_coefficients){
+  landsat_collection = landsat_collection
+    // Add EF coefficients to all the images
+    .map(function(image){
+    // Get details on the current image
+    var DATE = ee.String(image.get('DATE_ACQUIRED'));
+    var ImageID = ee.String(image.get('LANDSAT_SCENE_ID'));
+    // Get the EF coefficients from the imported table and filter out the correct ones for the current image
+    // EF coefficients are retrieved from the Albedo vs Surface Temperature scatter plot and are unique for every image
+    var Image_EF_coefficients = EF_coefficients
+      // Get the feature which has the correct Landsat Scene ID
+      .filterMetadata('Landsat_ID', 'equals', ImageID).first();
+    // Get coefficients from the selected feature. If no coefficient value can be found for a certain image, provide value -9999
+    var a_H = ee.Algorithms.If(Image_EF_coefficients, ee.Number(Image_EF_coefficients.get('DryEdge_a')), -9999);
+    var b_H = ee.Algorithms.If(Image_EF_coefficients, ee.Number(Image_EF_coefficients.get('DryEdge_b')), -9999);
+    var a_E = ee.Algorithms.If(Image_EF_coefficients, ee.Number(Image_EF_coefficients.get('WetEdge_a')), -9999);
+    var b_E = ee.Algorithms.If(Image_EF_coefficients, ee.Number(Image_EF_coefficients.get('WetEdge_b')), -9999);
+      // Add EF coefficients as properties to the image
+      return image.set({'Coefficient_a_H': a_H, 'Coefficient_b_H': b_H, 'Coefficient_a_E': a_E, 'Coefficient_b_E': b_E});    
+    })
+    // Filter out all useless images
+    .filterMetadata('Coefficient_a_H', 'greater_than', -999);
+  return landsat_collection;
+};
+
+
+///////  PRINT FUNCTIONS  \\\\\\\
+// Create some functions which can be used to print out statistics on specific images for the Guadalquivir basin
+exports.PrintStatisticsFirstImage = function(imageCollection, feature, additional_message) {
+  /*Def: 
+  Args:
+    imageCollection  [ee.ImageCollection]: ...
+    feature [...]: ...
+    additional_message [...]: ...
+  Returns:
+    [...]: this function doesn't return any object
+  */
+  // print statistics of one band of the first image in an ImageCollection
+  additional_message = additional_message || "";  // set default value of additional_message parameter to an empty string
+  
+  var image = imageCollection.first().select(feature);
+  var mean_value = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: image.geometry(),
+    scale:30,
+    maxPixels: 1e9
+  });
+  var percentiles = [0, 1, 25, 50, 75, 99, 100];
+  var statistics = image.reduceRegion({
+    reducer: ee.Reducer.percentile(percentiles),
+    geometry: image.geometry(),
+    scale:30,
+    maxPixels: 1e9
+  });
+  
+  var indent = ' ';
+  print(ee.String('Statistics (image) of ').cat(feature).cat(additional_message).cat(': '),
+    'Minimum: ', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p0'))),
+    '1st percentile: ', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p1'))), 
+    '25th percentile: ', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p25'))),
+    'Median: ', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p50'))),
+    '75th percentile: ', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p75'))),
+    '99th percentile', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p99'))),
+    'Maximum: ', ee.String(indent).cat(statistics.get(ee.String(feature).cat('_p100'))),
+    'Mean: ', ee.String(indent).cat(mean_value.get(feature))
+  );
+  return;
+};
+
+exports.PrintStatisticsCollectionProperty = function(imageCollection, feature, additional_message) {
+  // print statistics of a single property over an entire ImageCollection  
+  additional_message = additional_message || "";  // set default value of additional_message parameter to an empty string
+  
+  var mean_value = imageCollection.reduceColumns({
+    reducer: ee.Reducer.mean(),
+    selectors: [feature]
+  });
+  var percentiles = [0, 1, 25, 50, 75, 99, 100];
+  var statistics = imageCollection.reduceColumns({
+    reducer: ee.Reducer.percentile(percentiles),
+    selectors: [feature]
+  });
+  
+  var indent = ' ';
+  print(ee.String('Statistics (collection) of ').cat(feature).cat(additional_message).cat(': '),
+    'Minimum: ', ee.String(indent).cat(statistics.get('p0')),
+    '1st percentile: ', ee.String(indent).cat(statistics.get('p1')), 
+    '25th percentile: ', ee.String(indent).cat(statistics.get('p25')), 
+    'Median: ', ee.String(indent).cat(statistics.get('p50')),
+    '75th percentile: ', ee.String(indent).cat(statistics.get('p75')), 
+    '99th percentile', ee.String(indent).cat(statistics.get('p99')),
+    'Maximum: ', ee.String(indent).cat(statistics.get('p100')),
+    'Mean: ', ee.String(indent).cat(mean_value.get('mean'))
+  );
+  return;
+};  
+
+
+
+///////  WATER VAPOR  \\\\\\\
+// Nikam et al. (2016) refer to using Precipitable Water product (MOD05_L2, MYD05_L2) of MODIS
+// GEE doesn't have these datasets, so we're left to using one of the other options
+// I chose to use the 'NCEP/NCAR Reanalysis Data, Water vapor' database 
+// It has a very low spatial resolution (2.5 degrees), but high temporal resolution (four images every day: 0000, 0600, 1200, and 1800 UTC).
+// See: https://developers.google.com/earth-engine/datasets/catalog/NCEP_RE_surface_wv
+exports.WATERVAPOR_SURFTEMP = function(LandsatCollection) {
+  // Use the NCEP water vapor collection ("NCEP_RE/surface_wv")
+  var NCEPWaterVaporCollection = ee.ImageCollection("NCEP_RE/surface_wv")
+    // Use a mapping function to set an hour property to all the NCEP water vapor images    
+    .map(function(image) {
+      var image_date = image.date();
+      var image_hour = ee.Date(image.get('system:time_start')).get('hour');
+      return image.select("pr_wtr").rename("ncep_water_vapor").set({'Hour':image_hour, 'Date':image_date});
+    });
+  // Use the NCEP air temperature collection ("NCEP/NCAR Reanalysis Data, Surface Temperature")
+  var NCEPAirTempCollection = ee.ImageCollection("NCEP_RE/surface_temp")
+    // Use a mapping function to set an hour property to all the NCEP water vapor images    
+    .map(function(image) {
+      var image_date = image.date();
+      var image_hour = ee.Date(image.get('system:time_start')).get('hour');
+      return image.select("air").rename("ncep_air_temperature").set({'Hour':image_hour, 'Date':image_date});
+    });   
+  // Apply a mapping function to the landsat collection in order to add the correct water vapor band
+  LandsatCollection = ee.ImageCollection(LandsatCollection).map(function(image) {
+    // Define the geometry and the date of the image (reset the date to the start of the say by putting hour etc. to zero)
+    var ImageGeometry = image.geometry();
+    var ImageDate = image.date().update({'hour':0, 'minute':0, 'second':0});
+    // Select the NCEP water vapor images for one week in advance, starting at the date of the current image
+    var water_vapor = NCEPWaterVaporCollection.filterDate(ImageDate, ImageDate.advance(1, 'week'))
+      // Select the image which contains the water vapor level at 12AM
+      .filterMetadata('Hour', 'equals', 12)
+      .sort('system:time_start')  // sort the images on date, making the most recent image (the one closest to the current <ImageDate>) come first
+      .first() // Select the first image. In most cases this is the image of the current <ImageDate>.
+               // However, in some cases there is no water vapor image available for the current day, which is why the image which comes earliers in the future in chosen
+      // Convert from "kg per cubic m" to "g per square cm" (which equals "cm")
+      .divide(10)
+      // reproject the image so that the pixels overlap exactly with the Landsat pixels
+      .reproject({crs:'EPSG:32630', scale:30})
+      // Clip out all the irrelevant area from the world-spanning water vapor image;
+      // You need to clip for image geometry instead of roi in the case that we're working with many landsat images
+      .clip(ImageGeometry);
+    // Do the same for air temperature
+    var air_temperature = NCEPAirTempCollection.filterDate(ImageDate, ImageDate.advance(1, 'week'))
+      .filterMetadata('Hour', 'equals', 12)
+      .sort('system:time_start')
+      .first()
+      .reproject({crs:'EPSG:32630', scale:30})
+      .clip(ImageGeometry);      
+    // The clipping is not perfect, since the geometry of the Landsat image is a bit larger than the actual Landsat image
+    // Improve upon the clipping: make sure that we have exactly the same set of pixels from the projection as the Landsat image
+    var impossible_values = 10000000;
+    var mask = image.select('B_p').neq(impossible_values);
+    water_vapor = water_vapor.updateMask(mask);
+    air_temperature = air_temperature.updateMask(mask);
+    // Add the variable as a band to the image
+    return image.addBands(water_vapor.rename('Water_vapor')).addBands(air_temperature.rename('Air_temperature'));
+  });
+  return LandsatCollection;
+};
+
+
+
+/////// ADDITIONAL VARIABLES  \\\\\\\
+// Compute a number of variables and save them as image properties for later use
+// See pages 17 and 18 of Idaho (2002) for more info on methods
+exports.VARIABLES = function(LandsatCollection) {
+  // Define elevation according to SRTM elevation data
+  var Elevation = ee.Image("USGS/SRTMGL1_003");
+  // Add local (Sevilla, southern Spain) sunrise and sunset times. Data retrieved from: https://www.timeanddate.com/sun/spain/sevilla
+  // I used approximately mean values for each of the twelve months and assumed that values don't change from year to year
+  var Seville_location = ee.Geometry.Point([-5.9845,37.3891]);  // coordinates of the city of Seville, where the times were recorded
+  var local_sunrises = ee.Feature(Seville_location, {
+    '1':'08:35', '2':'08:20', '3':'07:35',  '4':'07:49',  '5':'07:15',  '6':'07:04', 
+    '7':'07:14', '8':'07:39', '9':'08:05', '10':'08:31', '11':'08:02', '12':'08:30'
+  });
+  var local_sunsets  = ee.Feature(Seville_location, {
+    '1':'18:30', '2':'19:03', '3':'19:30',  '4':'20:58',  '5':'21:25',  '6':'21:45', 
+    '7':'21:44', '8':'21:16', '9':'20:32', '10':'19:47', '11':'18:13', '12':'18:07'
+  });
+  // Apply a mapping function to the landsat collection in order to add the additional variables to all the images
+  LandsatCollection = ee.ImageCollection(LandsatCollection).map(function(image) {
+    // Compute the cosine of the angle between sun ray and zenith
+    var sol_inc_angle = ee.Number(90).subtract(image.get('SUN_ELEVATION')); // angle between sun ray and Zenith
+    var sol_inc_angle_rad = sol_inc_angle.multiply(ee.Number(Math.PI).divide(180));  // convert angle from degrees to radians
+    var cos_sol_inc_angle = sol_inc_angle_rad.cos();
+    // Compute the inverse squared relative earth-sun distance (dr)
+    var dr = ee.Number(1).divide(ee.Number(image.get('EARTH_SUN_DISTANCE')).pow(2));
+    // Compute the average elevation of each Landsat image
+    var ave_ele = Elevation.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: image.geometry(),
+      scale: 30,
+      maxPixels: 1e9
+    }).get('elevation');
+    // Select the air temperature and water vapor, added as bands in previous functions
+    var To = image.select('Air_temperature');
+    var w = image.select('Water_vapor');
+    // Compute variables
+    var To_threshold = 300;
+    var w_threshold = 1.6;
+    // Case 1: high To, high w
+    var tau_case1 = w.multiply(-0.11523).add(1.031412)
+      .multiply(To.gte(To_threshold).and(w.gte(w_threshold)));
+    // Case 2: high To, low w
+    var tau_case2 = w.multiply(-0.08007).add(0.974290)
+      .multiply(To.gte(To_threshold).and(w.lt(w_threshold)));
+    // Case 3: low To, high w
+    var tau_case3 = w.multiply(-0.14142).add(1.053710)
+      .multiply(To.lt(To_threshold).and(w.gte(w_threshold)));
+    // Case 4: low To, low w
+    var tau_case4 = w.multiply(-0.09611).add(0.982007)
+      .multiply(To.lt(To_threshold).and(w.lt(w_threshold)));  
+    var tau = tau_case1.add(tau_case2).add(tau_case3).add(tau_case4);
+    // Retrieve the relevant information for the sunrise and sunset times
+    var date = image.date();
+    var month = ee.String(date.get('month'));
+    var sunrise_time = ee.String(local_sunrises.get(month));
+    var sunset_time = ee.String(local_sunsets.get(month));
+    // Add the variables as properties to the image
+    return image.addBands(tau.rename('tau'))
+      .set({'Average_Elevation':ave_ele, 'cos_Solar_Incidence_Angle': cos_sol_inc_angle, 
+      'dr': dr, 'SUNRISE': sunrise_time, 'SUNSET': sunset_time});
+  });
+  return LandsatCollection;
+};
+
+
+
+///////  NDVI  \\\\\\\
+// See Tucker (1979) and Pirottia et al. (2014) for more info on methods
+// GEE also provides a NDVI image collection, but it only goes from 2013 onwards
+// GEE data https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_8DAY_NDVI
+exports.NDVI = function(image) {
+  var ndvi = image.normalizedDifference(['NIR_p', 'R_p']);
+  // Add the new band to the image
+  return image.addBands(ndvi.rename('NDVI'));
+};
+
+
+
+//////  LAND SURFACE EMISSIVITY  \\\\\\\
+// The emissivity of the surface of a material is its effectiveness in emitting energy as thermal radiation (wikipedia)
+
+exports.LSE_single_band = function(image) {
+  // This function is for computing the LSE in the case of a single band, so Landsat 5 and Landsat 7
+  // Collect constant values
+  var  a_T1 = -0.035;
+  var  b_T1 =  0.979;
+  var Ev_T1 =  0.004;
+  var Es_T1 =  0.986;
+  var NDVImin = 0.2;
+  var NDVImax = 0.5;
+  // Collect variables
+  var NDVI = image.select('NDVI');
+  var Refl_Red  = image.select('R_p');  // Reflectance of the red band
+  // Compute variables
+  var Pv = ((NDVI.subtract(NDVImin)).divide(NDVImax - NDVImin)).pow(2);  // Pv = vegetation fraction
+  // Step 1) Compute emissivity for pixels with NDVI < 0.2:
+  var NDVI_mask_1 = NDVI.lt(0.2);
+  var lse_T1_part1 = (Refl_Red.multiply(a_T1)).add(b_T1)
+    .multiply(NDVI_mask_1);
+  // Step 2) Compute emissivity for pixels with 0.2 < NDVI < 0.5
+  var NDVI_mask_2 = NDVI.gte(0.2).and(NDVI.lte(0.5));  
+  var lse_T1_part2 = (Pv.multiply(Ev_T1)).add(Es_T1)
+    .multiply(NDVI_mask_2);
+  // Step 3) Compute emissivity for pixels with NDVI > 0.5
+  var NDVI_mask_3 = NDVI.gte(0.5);
+  var zero_image = NDVI.multiply(0); // an image made up of nothing but zero values
+  var lse_T1_part3 = zero_image.add(0.99)
+    .multiply(NDVI_mask_3);
+  // Step 4) Add results for all pixels together
+  var lse_T1 = lse_T1_part1.add(lse_T1_part2).add(lse_T1_part3);
+  // Add the variable as a band to the image
+  return image.addBands(lse_T1.rename('T-1_lse'));
+};
+
+// See Nikam et al. (2016) for more info on methods
+exports.LSE_two_bands = function(image) {
+  // Collect constant values
+  // Remember, in Landsat 8 the first thermal band (T1) is band 10 and the second thermal band (T2) is band 11
+  var  a_T1 = -0.047;
+  var  b_T1 =  0.973;
+  var Ev_T1 =  0.9863;
+  var Es_T1 =  0.9668;
+  var  a_T2 = -0.0026;
+  var  b_T2 =  0.984;
+  var Ev_T2 =  0.9896;
+  var Es_T2 =  0.9747;
+  var NDVImin = 0.2;
+  var NDVImax = 0.5;
+  var Fsharp = 0.55;
+  // Collect variables
+  var NDVI = image.select('NDVI');
+  var Refl_Red  = image.select('R_p');  // Reflectance of the red band
+  // Compute variables
+  // Pv = vegetation fraction
+  var Pv = ((NDVI.subtract(NDVImin)).divide(NDVImax - NDVImin)).pow(2);
+  var Pv_altered = Pv.multiply(-1).add(1);
+  // C = cavity effect. If you assume flat ground, you can also just put the C term to zero
+  var C_T1 = Pv_altered.multiply(Fsharp).multiply(Ev_T1).multiply(1-Es_T1);
+  var C_T2 = Pv_altered.multiply(Fsharp).multiply(Ev_T2).multiply(1-Es_T2);  
+  // Step 1) Compute emissivity for pixels with NDVI < 0.2:
+  var NDVI_mask_1 = NDVI.lt(0.2);
+  var lse_T1_part1 = (Refl_Red.multiply(a_T1)).add(b_T1)
+    .multiply(NDVI_mask_1);  // part 1 of LSE
+  var lse_T2_part1 = (Refl_Red.multiply(a_T2)).add(b_T2)
+    .multiply(NDVI_mask_1);  // part 1 of LSE
+  // Step 2) Compute emissivity for pixels with 0.2 < NDVI < 0.5
+  var NDVI_mask_2 = NDVI.gte(0.2).and(NDVI.lte(0.5));  
+  var lse_T1_part2 = (Pv.multiply(Ev_T1)).add(Pv_altered.multiply(Es_T1)).add(C_T1)
+    .multiply(NDVI_mask_2);
+  var lse_T2_part2 = (Pv.multiply(Ev_T2)).add(Pv_altered.multiply(Es_T2)).add(C_T2)
+    .multiply(NDVI_mask_2);
+  // Step 3) Compute emissivity for pixels with NDVI > 0.5
+  var NDVI_mask_3 = NDVI.gte(0.5);
+  var lse_T1_part3 = C_T1.add(Ev_T1).multiply(NDVI_mask_3);
+  var lse_T2_part3 = C_T2.add(Ev_T2).multiply(NDVI_mask_3);
+  // Step 4) Add results for all pixels together
+  var lse_T1 = lse_T1_part1.add(lse_T1_part2).add(lse_T1_part3);
+  var lse_T2 = lse_T2_part1.add(lse_T2_part2).add(lse_T2_part3);  
+  // Add the variable as a band to the image
+  return image.addBands(lse_T1.rename('T-1_lse')).addBands(lse_T2.rename('T-2_lse'));
+};
+
+
+
+///////  LAND SURFACE TEMPERATURE  \\\\\\\
+
+// Use mono-window algorithm (MWA) \\
+exports.LANDSURFTEMP_MONO = function(image) {
+  // Set product range
+  var min_allowed_temperature = 263.15;
+  var max_allowed_temperature = 373.15;
+  // Collect constant values
+  var a = -67.355351;
+  var b = 0.458606;
+  // Collect variables
+  var To = image.select('Air_temperature');
+  var T1_bt = image.select('T-1_bt');  // at-sensor brightness temperature of thermal band (K)
+  var T1_lse = image.select('T-1_lse'); // land surface emissivity of thermal band
+  var tau = image.select('tau');
+  // mean atmospheric temperature (K)
+  // Compute the mean atmospheric air temperature (Ta) using the air temperature
+  var Ta = To.multiply(0.92621).add(16.0110);
+  // other variables
+  var C = T1_lse.multiply(tau);
+  var D_sub = tau.multiply(T1_lse.multiply(-1).add(1)).add(1);
+  var D = tau.multiply(-1).add(1).multiply(D_sub);
+  // Compute the land surface temperature (Ts)
+  var sub_part = D.multiply(-1).subtract(C).add(1);
+  var Ts_part1 = sub_part.multiply(a);
+  var Ts_part2 = T1_bt.multiply(sub_part.multiply(b).add(C).add(D));
+  var Ts_part3 = Ta.multiply(D);
+  var Ts = Ts_part1.add(Ts_part2).subtract(Ts_part3).divide(C);
+  // Impose restrictions: assume that surface temperature has to be in certain range
+  var mask_pixels_too_low = Ts.lt(min_allowed_temperature);
+  var mask_pixels_too_high = Ts.gt(max_allowed_temperature);
+  var mask_correct_pixels = (mask_pixels_too_low.add(mask_pixels_too_high)).eq(0);
+  var Ts_restricted = Ts.multiply(mask_correct_pixels).add(mask_pixels_too_low.multiply(min_allowed_temperature)).add(mask_pixels_too_high.multiply(max_allowed_temperature));
+  // Add the variable as a band to the image
+  return image.addBands(Ts_restricted.rename('Surface_Temperature'));
+};
+
+
+
+
+/// Use split window algorithm (SWA) \\\
+// See Nikam et al. (2016) for more info on methods
+// Khorchani et al (2018) shows that we can expect LST from 40 till 55 degree Celsius during the summer in S. Spain
+exports.LANDSURFTEMP_SPLIT = function(image) {
+  // Set product range
+  var min_allowed_temperature = 253.15;  // -20 degrees Celsius
+  var max_allowed_temperature = 373.15;  // 100 degrees Celsius
+  // Collect constant values
+  var C0 =   -0.268;
+  var C1 =    1.378;
+  var C2 =    0.183;
+  var C3 =   54.300;
+  var C4 =   -2.238;
+  var C5 = -129.200;
+  var C6 =   16.400;
+  // Collect variables
+  var w = image.select('Water_vapor');  // the monthly mean value of water vapot, using cloudless images
+  var T1_lse = image.select('T-1_lse');
+  var T2_lse = image.select('T-2_lse');
+  var T1_bt = image.select('T-1_bt');
+  var T2_bt = image.select('T-2_bt'); 
+  // Compute variables
+  var e_mean = (T1_lse.add(T2_lse)).multiply(0.5);  // mean land surface emissivity
+  var e_delta = T1_lse.subtract(T2_lse);  // emissivity difference
+  // Compute the land surface temperature (Ts)
+  var Ts_part1 = (T1_bt.subtract(T2_bt)).multiply(C1);
+  var Ts_part2 = ((T1_bt.subtract(T2_bt)).pow(2)).multiply(C2);
+  var Ts_part3 = ((e_mean.multiply(-1)).add(1)).multiply(w.add(C3).add(C4));
+  var Ts_part4 = e_delta.multiply(w.add(C5).add(C6));
+  var Ts = T1_bt.add(Ts_part1).add(Ts_part2).add(C0).add(Ts_part3).add(Ts_part4);
+  // Impose restrictions: assume that surface temperature has to be in certain range.
+  var mask_pixels_too_low = Ts.lt(min_allowed_temperature);
+  var mask_pixels_too_high = Ts.gt(max_allowed_temperature);
+  var mask_correct_pixels = (mask_pixels_too_low.add(mask_pixels_too_high)).eq(0);
+  var Ts_restricted = Ts.multiply(mask_correct_pixels).add(mask_pixels_too_low.multiply(min_allowed_temperature)).add(mask_pixels_too_high.multiply(max_allowed_temperature));
+  // Add the variable as a band to the image
+  return image.addBands(Ts_restricted.rename('Surface_Temperature'));
+};
+
+
+
+///////  SURFACE ALBEDO  \\\\\\\
+// Narrowband to broadband conversion method to estimate surface albedo from visible, NIR and SWIR Landsat bands
+// See Liang (2000)  for more info on method
+exports.ALBEDO = function(image) {
+  // Use the reflectances of the visible (blue and red), NIR and SWIR Landsat bands.
+  var Refl_Blue   = image.select('B_p');
+  var Refl_Red    = image.select('R_p');
+  var Refl_NIR    = image.select('NIR_p');
+  var Refl_SWIR1  = image.select('SWIR-1_p');
+  var Refl_SWIR2  = image.select('SWIR-2_p');
+  // method by Liang (2000)
+  var albedo = Refl_Blue.multiply(0.356).add(Refl_Red.multiply(0.130)).add(Refl_NIR.multiply(0.373))
+  .add(Refl_SWIR1.multiply(0.085)).add(Refl_SWIR2.multiply(0.072)).subtract(0.0018);
+  // Impose restictions: assume that albedo has to be in a certain range since it is a fraction: 0 < fraction < 1
+  var value_too_low = 0;
+  var value_too_high = 1;
+  var mask_pixels_too_low = albedo.lt(value_too_low);
+  var mask_pixels_too_high = albedo.gt(value_too_high);
+  var mask_correct_pixels = (mask_pixels_too_low.add(mask_pixels_too_high)).eq(0);
+  var albedo_restricted = albedo.multiply(mask_correct_pixels).add(mask_pixels_too_low.multiply(value_too_low))
+                                        .add(mask_pixels_too_high.multiply(value_too_high));
+  // Add the variables as bands to the image
+  return image.addBands(albedo_restricted.rename('Albedo'));
+};
+  
+  
+  
+///////  INCOMING SHORTWAVE RADIATION  \\\\\\\
+// See page 19 of Idaho (2002) for more info on methods
+exports.INCOMING_RS = function(image) {
+  // Collect constant values
+  var Gsc = ee.Number(1367);  // the solar constant (W/m2)
+  // Collect variables
+  var cos_sol_inc_angle = ee.Number(image.get('cos_Solar_Incidence_Angle'));
+  var dr = ee.Number(image.get('dr'));
+  var tau = image.select('tau');
+  // Incoming Shortwave Radiation (Rs_i) is calculated as a constant for the image time
+  var Rs_i = tau.multiply(Gsc).multiply(cos_sol_inc_angle).multiply(dr);
+  // Add this radiation flux as a property to the image
+  return image.addBands(Rs_i.rename('Incoming_Shortwave_Radiation'));
+};
+
+
+
+///// INCOMING LONGWAVE RADIATION \\\\\
+// See page 384 of Allen et al. (2007) for more info on methods
+// Most applications of METRIC use the surface temperature as a stand in for Ta (the near-surface air temperature)
+// However, some applications (e.g. SEBAL in Idaho (2002)) use a single value for Ta, namely the surface temperature of the "cold" pixel
+// Meanwhile, Roerink et al. (1999) consider the incoming longwave radiation to be an unknown term, and use in-situ data
+// We'll follow the METRIC approach
+exports.INC_LONG_RAD = function(image) {
+  // Collect constant values
+  var Stefan_constant = ee.Number(5.67).multiply(ee.Number(10).pow(-8));
+  // Collect variables
+  var To = image.select('Surface_Temperature');  // Use surface temperature as a stand in for near-surface air temperature
+  //var Tsw = ee.Number(image.get('Atmospheric_transmissivity'));
+  var tau = image.select('tau');
+  var E_a = tau.log().multiply(-1).pow(0.09).multiply(0.85);  // atmospheric emissivity (dimensionless)
+  // Compute the Incoming Longwave Radiation (TL_i) using the Stefan-Boltzmann equation  
+  var Ta_pow4 = To.pow(4);  // raise To to the power of 4
+  var RL_i = Ta_pow4.multiply(Stefan_constant).multiply(E_a);
+  // Add the variable as a band to the image
+  return image.addBands(RL_i.rename('Incoming_Longwave_Radiation'));
+};
+
+
+
+///////  OUTGOING LONGWAVE RADIATION  \\\\\\\
+// See page 22 of Idaho (2002) for more info on methods
+exports.OUT_LONG_RAD = function(image) {
+  // Collect constant values
+  var Stefan_constant = ee.Number(10).pow(-8).multiply(5.67);
+  // Collect variables
+  var E_o = image.select('T-1_lse');  // Surface_Emissivity_broad
+  var Ts = image.select('Surface_Temperature');
+  // Compute the Outgoing Longwave Radiation (RL_o) using the Stefan-Boltzmann equation
+  var RL_o = E_o.multiply(Stefan_constant).multiply(Ts.pow(4));
+  // Add the variable as a band to the image
+  return image.addBands(RL_o.rename('Outgoing_Longwave_Radiation'));
+};
+
+
+
+///////  SURFACE RADIATION BALANCE EQUATION  \\\\\\\
+// Compute the net surface radiation flux (Rn) using the previously computed radiation fluxes
+exports.NET_SURF_RAD = function(image) {
+  // Set product range
+  var value_too_low = 0;
+  // Collect variables
+  var E_o = image.select('T-1_lse');  // Surface_Emissivity_broad
+  var albedo = image.select('Albedo');
+  var RL_o = image.select('Outgoing_Longwave_Radiation');
+  var RL_i = image.select('Incoming_Longwave_Radiation');
+  var RS_i = image.select('Incoming_Shortwave_Radiation');
+  // Compute net surface radiation flux using surface radiation balance equation
+  var Rn_part1 = (albedo.multiply(-1)).add(1);
+      Rn_part1 = Rn_part1.multiply(RS_i);
+  var Rn_part2 = ((E_o.multiply(-1)).add(1));
+      Rn_part2 = Rn_part2.multiply(RL_i);
+  var Rn = Rn_part1.add(RL_i).subtract(RL_o).subtract(Rn_part2);
+  // Impose restrictions: the net surface radiation cannot be negative
+  var mask_correct_pixels = Rn.gte(value_too_low);
+  var Rn_restricted = Rn.multiply(mask_correct_pixels);
+  // Add the variable as a band to the image
+  return image.addBands(Rn_restricted.rename('Net_Surface_Radiation'));
+};
+
+
+
+///////  SOIL HEAT FLUX  \\\\\\\
+// See Danodia et al. (2019) for more info on methods
+// Allen et al. (2007) have a similar method, where they cross out some of the albedo elements from each other
+// The result is ofcourse the same. I went with the formula that seems to be cited by most papers and was first implemented by Bastiaanssen (2000).
+exports.SOIL_HEAT_FLUX = function(image) {
+  // Collect variables
+  var Rn = image.select('Net_Surface_Radiation');
+  var albedo = image.select('Albedo');
+  var NDVI = image.select('NDVI');
+  var Ts = image.select('Surface_Temperature');
+      Ts = Ts.subtract(273.15); // convert surface temperature from Kelvin to Celsius
+  // Compute Soil Heat Flux to Net Radiation ratio (G_Rn)
+  var G_Rn_part1 = Ts.divide(albedo);
+  var G_Rn_part2 = ((albedo.pow(2)).multiply(0.0074)).add(albedo.multiply(0.0038));
+  var G_Rn_part3 = ((NDVI.pow(4)).multiply(-0.98)).add(1);
+  var G_Rn = G_Rn_part1.multiply(G_Rn_part2).multiply(G_Rn_part3);
+  // Compute the Soil Heat Flux (G) 
+  var G = G_Rn.multiply(Rn);
+  // Add variable as a band to the image
+  return image.addBands(G.rename('Soil_Heat_Flux')).addBands(G_Rn.rename('G_Rn'));
+};
+
+
+
+///////  EVAPORATIVE FRACTION  \\\\\\\
+// This fraction is the ratio between the latent heat flux and the latent heat flux + the sensible heat flux
+exports.EVAPORATIVE_FRACTION = function(image) {
+  // Set product range
+  var value_too_low = 0;   // where latent heat flux E is zero
+  var value_too_high = 1;  // where sensible heat flux H is zero  o
+  // Get coefficients of the current image
+  var a_H = ee.Number(image.get('Coefficient_a_H'));
+  var b_H = ee.Number(image.get('Coefficient_b_H'));
+  var a_E = ee.Number(image.get('Coefficient_a_E'));
+  var b_E = ee.Number(image.get('Coefficient_b_E'));
+  // Collect variables
+  var albedo = image.select('Albedo');
+  var Ts = image.select('Surface_Temperature');  // (Kelvin)
+  // compute the evaporative fraction
+  var TH = albedo.multiply(a_H).add(b_H);
+  var TE = albedo.multiply(a_E).add(b_E);
+  var fraction_part1 = TH.subtract(Ts);
+  var fraction_part2 = TH.subtract(TE);
+  var evaporative_fraction = fraction_part1.divide(fraction_part2);
+  // Impose restictions: assume that the evaporative fraction has to be in a certain range: 0 < fraction < 1
+
+  var mask_pixels_too_low = evaporative_fraction.lt(value_too_low);
+  var mask_pixels_too_high = evaporative_fraction.gt(value_too_high);
+  var mask_correct_pixels = (mask_pixels_too_low.add(mask_pixels_too_high)).eq(0);
+  var evaporative_fraction_restricted = evaporative_fraction.multiply(mask_correct_pixels).add(mask_pixels_too_low.multiply(value_too_low))
+                                        .add(mask_pixels_too_high.multiply(value_too_high));
+  // Add varibble as bands to the image
+  return image.addBands(evaporative_fraction_restricted.rename('Evaporative_Fraction'))
+    .addBands(evaporative_fraction.rename('Evaporative_Fraction_original'));
+};
+
+
+
+///////  LATENT HEAT FLUX  \\\\\\\
+// See Danodia et al. (2019) for more info on methods
+exports.LATENT_HEAT_FLUX = function(image) {
+  // Set product range
+  var value_too_low = 0;  
+  // Collect variables
+  var Rn = image.select('Net_Surface_Radiation');
+  var G = image.select('Soil_Heat_Flux');
+  var evaporative_fraction = image.select('Evaporative_Fraction');
+  // Compute the Latent Heat Flux (E)
+  var E = evaporative_fraction.multiply(Rn.subtract(G));
+  // Impose restrictions: the latent heat flux cannot be negative
+  var mask_correct_pixels = E.gte(value_too_low);
+  var E_restricted = E.multiply(mask_correct_pixels);
+  // Add variables as a band to image
+  return image.addBands(E_restricted.rename('Latent_Heat_Flux'));
+};
+
+
+
+///////  DAILY NET RADIATION (GOMEZ) \\\\\\\
+/* We just computed the daily net radiation and the ratio to instantaneous net radiation.
+However, Gomez et al. (2005) states that it's also possible to use a static value for Cdi (~0.3)
+Furthermore, they refer to Wassenaar et al. (2002), stating that Cdi is not really static but that the ratio depends on solar zenith angle
+and varies between 0.05 and 0.3 following a sinusoidal law from winter to summer. */
+exports.DAILY_NET_SURF_RAD = function(image) {
+  // Collect variables
+  var Rni = image.select('Net_Surface_Radiation');  // instantanious net surface radiation
+  var DOY = image.date().getRelative('day', 'year');
+  var NrDaysYear = ee.Number(365);  // the number of days in the year
+  var StartDay = NrDaysYear.multiply(0.75);
+  var min = ee.Number(0.05);
+  var max = ee.Number(0.3);
+  var ampl = (max.subtract(min)).divide(2);
+  // Compute the Daily Net Radiation ratio (Cdi)
+  var Cdi = (DOY.add(StartDay)).divide(NrDaysYear).multiply(Math.PI).multiply(2);
+  Cdi = (Cdi.sin()).multiply(ampl).add(ampl).add(min);
+  // Compute the Daily Net Radiation (Rnd)
+  var Rnd = Rni.multiply(Cdi);
+  // Add variable as a band to the image
+  return image.set({'Daily_Net_Radiation_ratio':Cdi}).addBands(Rnd.rename('Daily_Net_radiation'));
+};
+
+
+
+///////  DAILY NET SURFACE RADIATION  (KRISHNA) \\\\\\\
+// See Krishna et al. (2014) for more info on methods
+// Although I am not sure, it seems that Daily Net Radiation (Rnd) Daily Average Net Radiation (DANR) (defined by Bisht et al. (2005)) are two different terms
+// Reference for this method is made to Seguin and Itier (1983)
+exports.DAILY_NET_SURF_RAD_alternative = function(image) {
+  // Collect variables
+  var Rni = image.select('Net_Surface_Radiation');  // instantanious net surface radiation
+  // convert time in hh:mm format to the fraction of the day which has passed
+  var convert_time = function(time_string) {
+      time_string = ee.String(time_string); // making sure this object is actually a string
+      var hour = ee.Number.parse(time_string.slice(0,2));  // first two elements in string indicate hour
+      var minute = ee.Number.parse(time_string.slice(3,5)); // third and fourth element in a string indicate minute
+      var Time = hour.add(minute.divide(60));  // get the total number of hours
+      Time = Time.divide(24);  // convert to fraction of full day
+      return ee.Number(Time);
+  };
+  var time = convert_time(image.get('SCENE_CENTER_TIME'));
+  // It is stated by Dutta et al. (2017) and other sources that we should take the moments 45 min after and 45 min before the local sunrise and sunsets respectively
+  // This is the moment at which (net) radiation fluxes start. 45 minutes is equal to 0.03125 full days
+  var sunrise_time = convert_time(image.get('SUNRISE')).add(0.03125);
+  var sunset_time  = convert_time(image.get('SUNSET')).subtract(0.03125);
+  // Compute Daily Net Radiation ratio (Cdi)
+  var Cdi_part1 = ee.Number(2).multiply(sunset_time.subtract(sunrise_time));
+  var Cdi_part21 = (time.subtract(sunrise_time)).divide(sunset_time.subtract(sunrise_time));
+  var Cdi_part22 = (Cdi_part21.multiply(Math.PI)).sin();
+  var Cdi = Cdi_part1.divide(Cdi_part22.multiply(Math.PI));
+  // Compute the Daily Net Radiation (Rnd)
+  var Rnd = Rni.multiply(Cdi);
+  // Add variable as a band to the image
+  return image.set({'Daily_Net_Radiation_ratio':Cdi}).addBands(Rnd.rename('Daily_Net_radiation'));
+};
+
+
+
+///////  EVAPOTRANSPIRATION  \\\\\\\
+// See Danodia et al. (2019) and Gomez (2005) for more info on methods
+// Evapotranspiration is the transfer of water from the land to the atmosphere by evaporation from the soil and by transpiration from plants (wikipedia)
+exports.EVAPOTRANSPIRATION = function(image) {
+  // Collect constant values
+  var vaporization_constant = ee.Number(2.45).multiply(ee.Number(10).pow(6));  // Latent heat of vaporization = 2.45 (MJ/kg)
+  var Cdi = ee.Number(image.get('Daily_Net_Radiation_ratio'));
+  // Collect variables
+  var evaporative_fraction = image.select('Evaporative_Fraction');
+  var Rni = image.select('Net_Surface_Radiation');  // Instantanious net surface radiation (W/m2)
+  // The radiation fluxes are in expressed in Watt per square meter (W/m2). Watt stands for Joule per second.
+  // However, the final ET should be expressed in mm per day. 
+  // This means that we should convert the fluxes from Joule per second per square meter to Joule per day per square meter.
+  // This is done through multiplication with the number of seconds in a day (86400)
+  var Rni_per_day = Rni.multiply(86400);
+  // Compute daily evapotranspiration (Gomez et al., 2005 approach)
+  var ETd = (Rni_per_day.multiply(evaporative_fraction).multiply(Cdi)).divide(vaporization_constant);
+  // Add variables as bands to the image
+  return image.addBands(ETd.rename('Daily_Evapotranspiration'));
+};
+
+  
+
+
+// ----------------------------------------------------------------- \\
+// --------------- IRRIGATION CLASSIFICATION SECTION --------------- \\
+// ----------------------------------------------------------------- \\
+
+
+// This function is used to collect all the data for several years (apart from the class labels).
+exports.Create_Input_Data = function(year, LandsatCollection, LandsatEditionIndicator, TimeStart, ROI, percentiles, SSEBI_Folder) {
+  /*Def: This function will collect all the data for one year (apart from the class labels)
+  Args:
+    year [int]: 
+    LandsatCollection [ee.ImageCollection]: the collection of Landsat scenes
+    TimeStart [ee.Date]: Start of the time span (start of the relevant year)
+    ROI: [ee.Geometry]: The region of interest.
+    percentiles [list]: Two integer values indicating percentile values which will be used to indicate min and max values
+    SSEBI_Folder [string]: Reference to folder where results produced with the S-SEBI method can be found.
+  Returns:
+    YearsResult [ee.ImageCollection]:
+  Example: */
+  
+  // Process the landsat image in order to remove unwanted pixels
+  var LANDSAT_PIXEL_MASKING = function(image) {
+    // Get rid of cloudy pixels
+    image = LANDSAT_METEOROLOGICAL_MASKING(image, 5, 6, 2);
+    // Get rid of shadows
+    image = LANDSAT_METEOROLOGICAL_MASKING(image, 7, 8, 2);
+    // Get rid of snowy pixels
+    image = LANDSAT_METEOROLOGICAL_MASKING(image, 9, 10, 2);
+    // After all the pre-processing steps we can return the image
+    return image;
+  };    
+    
+  // Apply pre-processing to all images in the landsat image collection
+  LandsatCollection = LandsatCollection.map(LANDSAT_PIXEL_MASKING);
+  // Create annual median images for the relevant landsat bands
+  var MedianLandsatImage = LandsatCollection.select(['B_p', 'G_p', 'R_p', 'NIR_p', 'SWIR-1_p', 'SWIR-2_p']).median();
+    
+  /// --- LANDSAT DERIVED DATA --- \\\
+  // Add additional measures as bands to the input image
+  // Compute NDVI and select percentiles
+  var NDVI = function(image) {
+    return image.normalizedDifference(['NIR_p', 'R_p']).rename('NDVI');
+  };
+  var Ndvi = LandsatCollection.map(NDVI).reduce(ee.Reducer.percentile(percentiles)).rename(['NDVI_min', 'NDVI_max']);
+  // Compute range
+  Ndvi = Ndvi.addBands(Ndvi.select('NDVI_max').subtract(Ndvi.select('NDVI_min')).rename('NDVI_range'));
+  
+  // Compute NDWI and select percentiles
+  var NDWI = function(image) {
+    return image.normalizedDifference(['NIR_p', 'SWIR-1_p']).rename('NDWI');
+  };
+  var Ndwi = LandsatCollection.map(NDWI).reduce(ee.Reducer.percentile(percentiles)).rename(['NDWI_min', 'NDWI_max']);
+  // Compute range
+  Ndwi = Ndwi.addBands(Ndwi.select('NDWI_max').subtract(Ndwi.select('NDWI_min')).rename('NDWI_range'));
+    
+  // Compute EVI and select percentiles
+  var EVI = function(image) {
+    var BlueReflectance = image.select('B_p');
+    var RedReflectance = image.select('R_p');
+    var NearinfraredReflectance = image.select('NIR_p');
+    var evi = (NearinfraredReflectance.subtract(RedReflectance).divide(NearinfraredReflectance.add(RedReflectance.multiply(6)).subtract(BlueReflectance.multiply(7.5)).add(1))).multiply(2.5);
+    return evi.rename('EVI');
+  };
+  var Evi = LandsatCollection.map(EVI).reduce(ee.Reducer.percentile(percentiles)).rename(['EVI_min', 'EVI_max']);
+  // Compute range
+  Evi = Evi.addBands(Evi.select('EVI_max').subtract(Evi.select('EVI_min')).rename('EVI_range'));
+    
+  // Compute GI (Greenness Index) and select percentiles
+  var GI = function(image) {
+    var BlueReflectance = image.select('B_p');
+    var GreenReflectance = image.select('G_p');
+    var RedReflectance = image.select('R_p');
+    var NIRReflectance = image.select('NIR_p');
+    var SWIR1Reflectance = image.select('SWIR-1_p');
+    var SWIR2Reflectance = image.select('SWIR-2_p');
+    var gi = (BlueReflectance.multiply(0.24717)).subtract(GreenReflectance.multiply(0.16263)).subtract(RedReflectance.multiply(0.040639)).add(NIRReflectance.multiply(0.85468)).add(SWIR1Reflectance.multiply(0.05493)).subtract(SWIR2Reflectance.multiply(0.11749));
+    return gi.rename('GI');
+  };
+  var Gi = LandsatCollection.map(GI).reduce(ee.Reducer.percentile(percentiles)).rename(['GI_min', 'GI_max']);
+  Gi = Gi.addBands(Gi.select('GI_max').subtract(Gi.select('GI_min')).rename('GI_range'));
+  
+  
+  /// --- MODIS DERIVED DATA --- \\\
+  // Create a function creates mean images for the different months in the year
+  var MONTHLYDATA = function(IMAGECOLLECTION, BANDID){
+    /*Def: Function to create 12 monthly median images from a submitted image collection*/
+    var Months = ee.List.sequence(1, 11, 1);
+    var MonthNames = ee.List(['1','2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']);
+    function GetMonthData(month, DATA) {
+      var NewImage = IMAGECOLLECTION.filterDate(ee.Date(TimeStart).advance(month, 'month'), 
+        ee.Date(TimeStart).advance(ee.Number(month).add(1), 'month')).median();
+      var MonthName = MonthNames.get(ee.Number(month));
+      return ee.Image(DATA).addBands(NewImage.rename(ee.String(BANDID.concat('_M')).cat(MonthName)));
+    }
+    var FirstImage = IMAGECOLLECTION.filterDate(TimeStart, ee.Date(TimeStart).advance(1, 'month')).mean().rename(BANDID.concat('_M1'));
+    var MonthlyData = Months.iterate(GetMonthData, FirstImage);
+    return MonthlyData;
+  };
+  
+  /// S-SEBI data \\\
+  // Select the (two) images signifying the S-SEBI results for the relevant Landsat edition and the current year 
+  var SSEBIresults = ee.ImageCollection(SSEBI_Folder).filterMetadata('year', 'equals', year)
+    .filterMetadata('landsat_edition', 'equals', LandsatEditionIndicator);
+  // Select the image for the winter months
+  var ssebi_W = SSEBIresults.filterMetadata('season', 'equals', 'winter').first()
+    .select(['Surface_Temperature', 'Albedo','Daily_Evapotranspiration'], ['LST-W', 'Alb-W', 'ET-W']);
+  // Select the image for the summer months
+  var ssebi_S = SSEBIresults.filterMetadata('season', 'equals', 'summer').first()
+    .select(['Surface_Temperature', 'Albedo','Daily_Evapotranspiration'], ['LST-S', 'Alb-S', 'ET-S']);
+  
+  /// MODIS LST \\\
+  var MODIS_LST_DATA = ee.ImageCollection("MODIS/006/MOD11A1").select('LST_Day_1km');
+  var modisLSTdata = ee.Image(MONTHLYDATA(MODIS_LST_DATA, 'LST'))
+  // Multiplication is necessary due to scale (see documentation of MODIS image collection)
+    .multiply(0.02);
+  
+  /// MODIS ET \\\
+  var MODIS_ET_DATA = ee.ImageCollection('MODIS/NTSG/MOD16A2/105').select('ET');
+  var modisETdata = MONTHLYDATA(MODIS_ET_DATA, 'ET');
+  
+  /// MODIS NDVI \\\
+  var MODIS_NDVI_DATA = ee.ImageCollection("MODIS/006/MOD13Q1").select('NDVI');
+  var modisNDVIdata = MONTHLYDATA(MODIS_NDVI_DATA, 'NDVI');
+  
+  /// MODIS EVI \\\
+  var MODIS_EVI_DATA = ee.ImageCollection("MODIS/006/MOD13Q1").select('EVI');
+  var modisEVIdata = MONTHLYDATA(MODIS_EVI_DATA, 'EVI');
+
+  /// --- ENVIRONMENTAL DATA --- \\\
+  var EnvironmentalBands;
+  var Elevation = ee.Image('CGIAR/SRTM90_V4').rename('Elevation');  // Load the SRTM image
+  // Apply an algorithm to the height data to compute slope
+  var Slope = ee.Terrain.slope(Elevation).rename('Slope');  
+  // For temperature and precipitation there is only information available till 2012
+  if (year < 2013) {
+    // Annual temperature (originally too large by a factor 100 and in degrees Celsius)
+    var TempID = 'users/erikjan22/Prcp_and_Temp/DownscaledYearlyAvgTavg'.concat(year.toString());
+    var Temperature = ee.Image(TempID).select('b1').rename('TEMP')
+      // Transform to degrees Kelvin
+      .divide(100).add(273.15);
+    // Annual precipitation (originally too large by a factor 100 and in mm)
+    var PrcpID = 'users/erikjan22/Prcp_and_Temp/DownscaledTotalPrcp'.concat(year.toString());
+    var Precipitation = ee.Image(PrcpID).select('b1').rename('PRCP')
+      // correction
+      .divide(100);
+    // Add everything together
+    EnvironmentalBands = Elevation.addBands(Slope)
+        .addBands(Temperature).addBands(Precipitation);
+  }
+  else {
+    print('Annual precipitation and temperature are not added, since those are only available till 2012.');
+    // Only add the evelation and slope bands tothe environmental bands image
+    EnvironmentalBands = Elevation.addBands(Slope);  
+  }
+
+  /// --- Put all the input data together --- \\\
+  // Gather the into information together in one image with all the necessary bands of training
+  // Start with the median annual values for the Landsat bands
+  var InputData = MedianLandsatImage
+    // Add the median annual values for the computed variables derived from the landsat bands
+    .addBands(Ndvi).addBands(Ndwi).addBands(Evi).addBands(Gi)
+    // Add the relevant bands computed through the S-SEBI implementation
+    .addBands(ssebi_W).addBands(ssebi_S)
+    // Add monthly products derived from MODIS images (found in GEE data catalogue)
+    .addBands(modisLSTdata).addBands(modisETdata).addBands(modisNDVIdata).addBands(modisEVIdata)
+    // Add the environmental bands
+    .addBands(EnvironmentalBands)
+    // Alter the projection of all the bands in the input image and set the scale to 30 meters
+    .reproject({crs:'EPSG:32630', scale:30})
+    // Only select the region of interest
+    .clip(ROI);
+
+  // Return the resulting image with all the input bands included
+  return InputData;
+};
+
+
+// This function is used to determine the irrigation status of a SIOSE polygon.
+exports.SIOSE_Irrigation_Status = function(SIOSE_FeatureCollection, Low_Irr_Percentage, High_Irr_Percentage) {
+  /*Def: This function adds properies to SIOSE features indicating the percentage of area which is irrigated, as well a irrigation status label
+  Args:
+    SIOSE_FeatureCollection [ee.FeatureCollection]: ...
+    Low_Irr_Percentage [int]: ..
+    High_Irr_Percentage [int]: ...
+  Returns:
+    SIOSE_FeatureCollection [ee.FeatureCollection]: update of the input where the features have added properties
+  */
+  
+  // (A) Function which computes the percentage of irrigated land from the code of a SIOSE polygon
+  function Find_Irrigated_Percentage(AreaCode) {
+    // Specify the correct type
+    AreaCode = ee.String(AreaCode);
+    // First find the parts in the code which correspond to "A elements"
+    var Mixed_Element_RegExp = "[0-9][0-9][A-Z]*\\([^\\)]*\\)"; //"[0-9][0-9]A\\([^\\)]*\\)";
+    /*Note: by default the match() method doesn't return all matches, just the first one. This also goes for the replace() 
+      method. Use the 'g' flag (meaning 'global') to signify that you want to return all the mathches in the entire string.*/
+    var Mixed_Elements = AreaCode.match(Mixed_Element_RegExp, 'g');
+    // Find the irrigated percentage from the "A elements"
+    var Mixed_Elements_Percentage = Mixed_Elements.iterate(Mixed_Element_Processing, 0);
+    // Analyze the remainder of the code (i.e. no "A elements")
+    var Code_Remainder = AreaCode.replace(Mixed_Element_RegExp, '', 'g');
+    var Code_Remainder_Percentage = Code_Remainder.split('_').iterate(AnalyzeSIOSECode, 0);
+    // Return the total irrigation percentage for the entire area
+    var Total_Result = ee.Number(Mixed_Elements_Percentage).add(Code_Remainder_Percentage);
+    return Total_Result;
+  }
+  
+  // (B) The Land Type code can be quite complex. This function handles more complex parts of this code.
+  function Mixed_Element_Processing(Mixed_Element, TotalIrrigatedPercentage) {
+    // Force the correct type
+    Mixed_Element = ee.String(Mixed_Element);
+    // Find the "A element" percentage
+    var Mixed_Element_Multiplier_RegExp = "[0-9][0-9][A-Z]*\\(";
+    var Mixed_Element_Multiplier = ee.String(Mixed_Element.match(Mixed_Element_Multiplier_RegExp).get(0)).match("[0-9][0-9]").get(0);
+    Mixed_Element_Multiplier = ee.Number.parse(Mixed_Element_Multiplier).divide(100);
+    // Remove the "A element" percentage
+    Mixed_Element = Mixed_Element.replace(Mixed_Element_Multiplier_RegExp, '');
+    var Mixed_Element_Percentages = Mixed_Element.split('_').iterate(AnalyzeSIOSECode, 0);
+    return ee.Number(TotalIrrigatedPercentage).add(Mixed_Element_Multiplier.multiply(Mixed_Element_Percentages));
+  }
+  
+  // (C) This function handles the 'simpler' parts of the Land Type code.
+  function AnalyzeSIOSECode(Element_Code, TotalIrrigatedPercentage) {
+    // SubArea is (a part of) the 'SIOSE_CODE' property which indicates land type
+    Element_Code = ee.String(Element_Code);
+    // Retrieve the two-digit value which indicate the percentage of this piece of the area compared to the total area
+    var Percentage = Element_Code.match('[0-9][0-9]');
+    // Convert the two-digit value into a number. If no two-digit was found, it means that we're dealing with 100 percent of the area
+    Percentage = ee.Algorithms.If(Percentage, ee.Number.parse(ee.String(Percentage.get(0))), ee.Number(100));
+    // See if we can find 'rr' in the code, which indicates irrigation
+    var Index_rr = Element_Code.index('rr');
+    // See if we can find 'rn' in the code, which indicates irrigation
+    var Index_rn = Element_Code.index('rn');
+    // If the code indicates that the current sub area is irrigated, store the Percentage as being irrigated. Else, return 0.
+    var IrrigatedPercentage = ee.Algorithms.If(Index_rr.gt(-1).or(Index_rn.gt(-1)), Percentage, 0);
+    // Add the newly computed irrigated percentage to the total
+    return ee.Number(IrrigatedPercentage).add(TotalIrrigatedPercentage);
+  }
+  // Apply all the functions to every SIOSE feature
+  SIOSE_FeatureCollection = ee.FeatureCollection(SIOSE_FeatureCollection)
+    .map(function(feature) {
+      // Find the Land Type code
+      var FeatureCode = ee.String(feature.get('SIOSE_CODE'));
+      // Extract the percentage of irrigated land area from the code
+      var FeatureIrrigatedPercentage = ee.Number(Find_Irrigated_Percentage(FeatureCode));
+      // Detect if the polygon is irrigated
+      var irr_condition = ee.Number(ee.Algorithms.If({
+        condition: FeatureIrrigatedPercentage.gte(High_Irr_Percentage), 
+        trueCase: 1,
+        falseCase: 2
+      }));
+      // Detect if the polygon is non-irrigated
+      irr_condition = ee.Number(ee.Algorithms.If({
+        condition: FeatureIrrigatedPercentage.lte(Low_Irr_Percentage), 
+        trueCase: 0,
+        falseCase: irr_condition
+      }));     
+      // Return a new Feature, with new property (1 for irrigated, 0 for not-irrigated)
+      return feature.set({'Irrigation_Percentage':FeatureIrrigatedPercentage, 'Irrigation_Status':irr_condition});
+    });
+  return SIOSE_FeatureCollection;
+};
+
+
+
+
+// ------------------------------------------------------------- \\
+// -------------------- REFERENCES OVERVIEW -------------------- \\
+// ------------------------------------------------------------- \\
+
+/*
+Allen et al.    (2007) - Satellite-Based Energy Balance for Mapping Evapotranspiration with Internalized Calibration (METRIC)-Model
+Bastiaanssen    (2000) - SEBAL-based sensible and latent heat fluxes in the irrigated Gediz Basin, Turkey
+Bisht et al     (2005) - Estimation of the net radiation using MODIS (Moderate Resolution Imaging Spectroradiometer) data for clear sky days
+Danodia et al.  (2019) - Application of S-SEBI model for crop evapotranspiration using Landsat-8 data over parts of North India
+Dutta et al.    (2017) - Estimation of daily average net radiation and its variation over West Bengal, India using MODIS products
+Gomez et al.    (2005) - Retrieval of evapotranspiration over the Alpilles/ReSeDA experimental site using airborne POLDER sensor and a thermal camera
+Idaho           (2002) - SEBAL-Surface Energy Balance Algorithms for Land
+Khorchani       (2018) - Average annual and seasonal Land Surface Temperature, Spanish Peninsular
+Krishna et al.  (2014) - Estimation of Net Radiation Using Satellite Based Data Inputs
+Liang, S.       (2000) - Narrowband to broadband conversions of land surface albedo I Algorithms
+Nikam           (2016) - Retrieval of land surface temperature from Landsat 8 TIRS for the command area of Mula irrigation project
+Pirottia et al. (2014) - NDVI From Landsat 8 Vegetation Indices to Study Movement Dynamics of Capra Ibex in Mountain Areas
+Roerink et al.  (2000) - S-SEBI: A Simple Remote Sensing Algorithm to Estimate the Surface Energy Balance
+Seguin  & Itier (1983) - Using midday surface temperature to estimate daily evaporation from satellite thermal IR data.
+Tucker          (1979) - Red and Photographic Infrared linear Combinations for Monitoring Vegetation
+Wassenaar       (2002) - Estimation of evapotranspiration on heterogeneous pixels.
+*/
+

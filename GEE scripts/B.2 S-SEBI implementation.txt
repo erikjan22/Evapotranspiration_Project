@@ -1,0 +1,386 @@
+
+
+// MAPPING TIME-SERIES EVAPOTRANSPIRATION FOR AGRICULTURAL APPLICATIONS
+// A CASE STUDY IN GUIDALQUIVIR RIVER BASIN
+// Erik Bootsma - June 2020 - Uppsala University
+
+// This script was developed in order to implement the S-SEBI model and estimate evapotranspiration (ET) in Southern Spain
+
+/////// INITIALIZATION \\\\\\\
+// Create a list with your Landsat dates of interest. These must be correct, or dates will get mixed up and there will be errors!
+var landsat_start_date = '2001-01-01';
+var landsat_end_date =  ee.Date(landsat_start_date).advance(1, 'year');
+// Specify the landsat satellite, i.e. 'Landsat5', 'Landsat7' or 'Landsat8'
+var LANDSAT_EDITION = 'Landsat5';
+// Specify whether to use the radiance and brightness temperature as stored in the GEE data catalogue (true) or as computed in the script (false)
+// The results should be the same either way
+var LANDSAT_VARIABLES_PRE_COMPUTED = false;
+
+// Define a possible point of interest, like the flux station ES-Cnd
+var poi  = ee.Geometry.Point([-3.227659, 37.914998]);
+//var RadiusRoi = 50000;
+//var roi = station_location.buffer(RadiusRoi);
+var EU_Basins = ee.FeatureCollection('users/erikjan22/EU_Basins');
+var Guadalquivir_basin = EU_Basins.filter(ee.Filter.eq('country', 'ES')).filter(ee.Filter.eq('nameText', 'GUADALQUIVIR')).first()
+  // Take the geometry and simplify it (to make computations easier)
+  .geometry().simplify(250);
+// Since the Landsat images overlap at the edges, we don't need the images that only hit the border area of the roi
+var GBbuffered = Guadalquivir_basin.buffer(-40000);
+// Define the region of interest (roi)
+var roi = Guadalquivir_basin;
+// Define the region for which the landsat images will be selected
+var roi_landsat = GBbuffered;
+
+// FILTER OUT IMAGES
+var max_cloud_cover = 90;  // Maximum allowed cloud cover for images
+// Determine the size of the border of Landsat images which should be cut
+// Be aware, I am considering the geometry of the image, which often extends outside of the actual image
+// 8000 is a good maximum size, whereby the edge pixels are all removed, but adjacent images are still slightly overlapping
+// A buffer of 0 is not possible, so if you want no buffer, just put this vlaue very small (e.g. at 1)
+var buffer_size = 1;// FILTER OUT UNWANTED PIXELS
+
+var max_elevation_level = 850;  // Pixels which elevation above this will be masked
+var max_slope_level = 20;  // Pixels with a slope above this will be masked
+// specify type of corine masking (strict or not-strict)
+var CORINEmaskingVersion = "version2";
+
+// Select bands. One of these has to be 'Daily_Evapotranspiration'
+/*var BandsOfInterest = ['Surface_Temperature', 'Albedo', 'Net_Surface_Radiation', 'Latent_Heat_Flux', 
+  'Soil_Heat_Flux', 'Evaporative_Fraction', 'Daily_Evapotranspiration'];
+var NewBandNames = ['LST', 'Albedo', 'Rni', 'Gi', 'LEi', 'EF', 'ETd'];*/
+var BandsOfInterest = ['Surface_Temperature', 'Albedo', 'Daily_Evapotranspiration'];
+var DataBandNames = ['LST', 'Albedo', 'ETd'];
+
+var NameStation = 'ES-Cnd';
+var ExportFieldData = false;
+var ExportAllImages = false;
+var Export2SeasonalImages = false;
+var Export4SeasonalImages = false;
+
+var FolderFieldData = 'GEE_exports';
+var Results2Seasonal = 'Seasonal_results';
+var Results4Seasonal = 'Seasonal_ET';
+
+
+
+/////// DATA \\\\\\\
+// Find the current year
+var CurrentYearStr = landsat_start_date.slice(0,4);
+// Convert the current year variable from string type to integer type
+var CurrentYearInt = parseInt(CurrentYearStr, '');
+
+var YearMonthString = landsat_start_date.slice(0, 7);
+
+// Define Landsat edition indicator
+var EditionIndicator;
+if (LANDSAT_EDITION == 'Landsat5') {
+  EditionIndicator = 'L5';
+}
+else if (LANDSAT_EDITION == 'Landsat7') {
+  EditionIndicator = 'L7';
+}
+else if (LANDSAT_EDITION == 'Landsat8') {
+  EditionIndicator = 'L8';
+}
+
+// Import the necessary functions defined in another script.
+var VARIOUS_FUNCTIONS = require('users/erikjan22/Evapotranspiration:Main project/A. Various functions');
+var landsat_collection = VARIOUS_FUNCTIONS.LANDSATDATA(LANDSAT_EDITION, LANDSAT_VARIABLES_PRE_COMPUTED, landsat_start_date, landsat_end_date, roi_landsat, max_cloud_cover, buffer_size);
+print('Initial landsat collection:', landsat_collection);
+// Evaporative Fraction (EF) coefficients
+var EF_coefficients = ee.FeatureCollection('users/erikjan22/S-SEBI/EF_coefficients')
+  .sort('DATE');
+
+landsat_collection = VARIOUS_FUNCTIONS.LANDSAT_EF(landsat_collection, EF_coefficients);
+  
+print('EF_coefficients:', EF_coefficients);
+print('Collection of Landsat images before processing:', landsat_collection);
+
+// Mask unwanted pixels and remove landsat images which don't have anough valid (i.e. unmasked) pixels
+landsat_collection = VARIOUS_FUNCTIONS.IMAGE_PIXEL_MASKING(CORINEmaskingVersion, landsat_collection, roi, CurrentYearInt, max_elevation_level, max_slope_level);
+
+///// COMPUTE PRODUCTS \\\\\
+// Add the water vapor band to all the landsat images
+landsat_collection = VARIOUS_FUNCTIONS.WATERVAPOR_SURFTEMP(landsat_collection);
+// Add additional variables to all the landsat images
+landsat_collection = VARIOUS_FUNCTIONS.VARIABLES(landsat_collection);
+
+// Compute all the necessary products
+landsat_collection = landsat_collection
+  .map(VARIOUS_FUNCTIONS.NDVI)
+  .map(VARIOUS_FUNCTIONS.ALBEDO);
+if (LANDSAT_EDITION == 'Landsat5' || LANDSAT_EDITION == 'Landsat7') {
+  landsat_collection = landsat_collection
+    .map(VARIOUS_FUNCTIONS.LSE_single_band)
+    .map(VARIOUS_FUNCTIONS.LANDSURFTEMP_MONO);
+}
+else if (LANDSAT_EDITION == 'Landsat8') {
+  landsat_collection = landsat_collection
+    .map(VARIOUS_FUNCTIONS.LSE_two_bands)
+    .map(VARIOUS_FUNCTIONS.LANDSURFTEMP_SPLIT); 
+}
+else {
+  // Check that a correct Landsat edition has been chosen
+  throw 'Error: To create a collection of Landsat images the user needs to specify an edition (i.e. "Landsat5", "Landsat7" or "Landsat8")';
+}
+landsat_collection = landsat_collection  
+  .map(VARIOUS_FUNCTIONS.INCOMING_RS)
+  .map(VARIOUS_FUNCTIONS.INC_LONG_RAD)
+  .map(VARIOUS_FUNCTIONS.OUT_LONG_RAD)
+  .map(VARIOUS_FUNCTIONS.NET_SURF_RAD)
+  .map(VARIOUS_FUNCTIONS.SOIL_HEAT_FLUX)
+  .map(VARIOUS_FUNCTIONS.EVAPORATIVE_FRACTION)
+  .map(VARIOUS_FUNCTIONS.LATENT_HEAT_FLUX)
+  .map(VARIOUS_FUNCTIONS.DAILY_NET_SURF_RAD)
+  .map(VARIOUS_FUNCTIONS.EVAPOTRANSPIRATION)
+  .sort('DATE_ACQUIRED');
+
+print('Collection of Landsat images after processing:', landsat_collection);
+
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Latent_Heat_Flux', ' (W/m2) (~0-500)');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Daily_Net_radiation_Gomez', ' (W/m2)');
+//var x = PrintStatisticsCollectionProperty(landsat_collection, 'Daily_Net_Radiation_ratio_Gomez');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Daily_Net_radiation_Krishna', ' (W/m2)');
+//var x = PrintStatisticsCollectionProperty(landsat_collection, 'Daily_Net_Radiation_ratio_Krishna');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Evaporative_Fraction');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Evaporative_Fraction_original');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Soil_Heat_Flux', ' (W/m2) (~0-200)');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'G_Rn');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Net_Surface_Radiation', ' (W/m2) (~100-700)');
+//var x = PrintStatisticsCollectionProperty(landsat_collection, 'Incoming_Shortwave_Radiation');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Daily_Evapotranspiration_Gomez', '(mm/day) (0-5)');
+//var x = PrintStatisticsFirstImage(landsat_collection, 'Daily_Evapotranspiration_Krishna', '(mm/day) (0-5)');
+
+
+
+/////// POST-PROCESSING \\\\\\\
+
+// Collection resulting images in a mosaic (on date)
+var unique_dates = landsat_collection.toList(9999)
+  .map(function(image){
+    return ee.Image(image).date().format("YYYY-MM-dd");
+  }).distinct();
+var landsat_collection_mosaic = unique_dates.map(function(date){
+  date = ee.Date(date);
+  var image = landsat_collection
+    .filterDate(date, date.advance(1, "day"))
+    .mosaic();
+  return image.set({"system:time_start":date.millis(),"system:id": date.format("YYYY-MM-dd")});
+});
+landsat_collection_mosaic = ee.ImageCollection(landsat_collection_mosaic).select(BandsOfInterest);
+  
+
+/////// EXPORT RESULTS \\\\\\\
+var ExportAllSSEBIresults = function(LandsatCollection) {
+  // Exports a random sample of data points (albedo and LST values) for each of the images in the Landsat image collection
+  // Force the list of images to the correct GEE type
+  var LandsatList = ee.ImageCollection(LandsatCollection).toList(22);
+  // Use a for loop to export all images in the list one by one
+  // This for loop makes extensive usage of the list of string values {landsat_dates} created in the first section
+  var nr_images = LandsatList.size().getInfo();
+  // Use a for loop to export all images in the list one by one
+  // This for loop makes extensive usage of the list of string values {landsat_dates} created in the first section
+  for (var n=0; n<nr_images; n++) {
+    // Select the current image with the relevant bands
+    var ImageToExport = ee.Image(LandsatList.get(n)).select(BandsOfInterest);
+    var ImageDate = ee.String(ImageToExport.get('DATE_ACQUIRED'));
+    var DateString = ImageDate.getInfo(); // Use with caution
+    var task = Export.image.toAsset({
+      image: ImageToExport, 
+      description: DateString.concat('_S-SEBI_result'),
+      assetId: ('S-SEBI/').concat(ResultsCollection).concat('/').concat(DateString).concat('_S-SEBI_result'),
+      region: roi,
+      scale: 30,
+      crs: 'EPSG:32629'
+    });
+  }
+  print('Go to "Task" tab on the top right to start Export tasks.');  
+  return LandsatCollection;
+};
+if (ExportAllImages) {
+  // Export each of the images individually
+  var x = ExportAllSSEBIresults(landsat_collection);
+}
+
+if (Export2SeasonalImages) {
+  for (var period = 1; period<2; period++) {
+    // Create a mean (average) image over the winter months of the year
+    var Winter_Mean_Image = landsat_collection.filterDate(CurrentYearStr.concat('-01-01'), CurrentYearStr.concat('-05-01'))
+      .merge(landsat_collection.filterDate(CurrentYearStr.concat('-11-01'), (CurrentYearStr+1).toString().concat('-01-01')))
+      .select(BandsOfInterest)
+      .mean()
+      .set({'system:time_start':landsat_start_date, 'year':CurrentYearInt, 'season':'winter', 'landsat_edition':EditionIndicator});
+    // Export the created seasonal image
+    Export.image.toAsset({
+      image: Winter_Mean_Image, 
+      description: 'Export_'+EditionIndicator+'_'+CurrentYearStr+'-W_S-SEBI_results',
+      assetId: 'S-SEBI/'+Results2Seasonal+'/'+EditionIndicator+'_'+CurrentYearStr+'-W',
+      region: roi,
+      scale: 30,
+      crs: 'EPSG:32629',
+      maxPixels: 1000000000
+    });
+    // Create a mean (average) image over the summer months of the year
+    var Summer_Mean_Image = landsat_collection.select(BandsOfInterest)
+      .filterDate(CurrentYearStr.concat('-05-01'), CurrentYearStr.concat('-11-01'))
+      .mean()
+      .set({'system:time_start':landsat_start_date, 'year':CurrentYearInt, 'season':'summer', 'landsat_edition':EditionIndicator});
+    // Export the created seasonal image
+    Export.image.toAsset({
+      image: Summer_Mean_Image, 
+      description: 'Export_'+EditionIndicator+'_'+CurrentYearStr+'-S_S-SEBI_results',
+      assetId: 'S-SEBI/'+Results2Seasonal+'/'+EditionIndicator+'_'+CurrentYearStr+'-S',
+      region: roi,
+      scale: 30,
+      crs: 'EPSG:32629',
+      maxPixels: 1000000000
+    });
+  }
+}
+
+if (Export4SeasonalImages) {
+  var date = ee.Date(CurrentYearStr.concat('-01-01'));
+  for (var season = 1; season<5; season++) {
+    // Create a mean (average) image for all four seasonal perios in one year
+    var Seasonal_Mean_Image = landsat_collection.select(BandsOfInterest).filterDate(date, date.advance(3, 'month')).mean()
+      .set({'system:time_start':landsat_start_date, 'year':CurrentYearInt, 'season':season, 'landsat_edition':EditionIndicator});
+    // Export the created seasonal images
+    Export.image.toAsset({
+      image: Seasonal_Mean_Image, 
+      description: 'Export_'+EditionIndicator+'_'+CurrentYearStr+'-'+season.toString()+'_S-SEBI_results',
+      assetId: 'S-SEBI/'+Results4Seasonal+'/'+EditionIndicator+'_'+CurrentYearStr+'-'+season.toString(),
+      region: roi,
+      scale: 30,
+      crs: 'EPSG:32629',
+      maxPixels: 1000000000
+    });
+    // update the date variable
+    date = date.advance(3, 'months');
+  }
+}
+
+var GetFieldData = function(image){
+  image = ee.Image(image).select(BandsOfInterest).rename(DataBandNames);
+  var imageDate = image.get('DATE_ACQUIRED');
+  var SSEBI_mean = image.reduceRegion({
+    reducer: ee.Reducer.mean(), 
+    geometry: roi, 
+    scale: 30,
+    maxPixels: 1e9
+  });
+  var SSEBI_std = image.reduceRegion({
+    reducer: ee.Reducer.stdDev(),
+    geometry: roi, 
+    scale: 30,
+    maxPixels: 1e9
+  });  
+  var PixelsCount = image.reduceRegion({
+    reducer: ee.Reducer.count(),
+    geometry: roi,
+    scale: 30,
+    maxPixels: 1e9
+  });
+  return ee.Feature(poi, {'DATE':imageDate, 'SSEBI_mean':SSEBI_mean, 'SSEBI_std':SSEBI_std, 'nrPixels':PixelsCount});
+};
+
+
+if (ExportFieldData) {
+  var FieldData = landsat_collection.map(GetFieldData).sort('DATE');
+  Export.table.toDrive({
+    collection: FieldData,
+    description: 'Export_S-SEBI_data_results',
+    folder: FolderFieldData,
+    fileNamePrefix: 'S-SEBI_data_results',
+    fileFormat: 'csv'
+  });
+  print('Complete field data:', FieldData)
+  print('Example of field data result: ', FieldData.first());
+}
+
+
+
+/////// MAP VISUALIZATION \\\\\\\
+// select an image for visualization
+var VisImage = landsat_collection.first();
+print('Info on image which is visualized:', 
+      'Image:', VisImage, 
+      'Date:', VisImage.date());
+
+// Define the visualization parameters.
+var visParamsTrue = {bands: ['R_p', 'G_p', 'B_p'], max: 0.3};  // the p bands are for surface reflection
+var visParamsTemperature = {min: 273.15, max: 353.15, palette: ['#0000FF', '#00FF00', '#FF0000']}; // Blue, Green, Red
+var visParamsNDVI = {min:-1, max:1, palette: ['#90ee90', '#037d50', '#026440', '#024b30', '#013220']};  // light green to dark green
+var visParamsAlbedo = {min:0, max:1.0, palette: ['#ffdae0', '#ff8da1', '#cd00cd', '#b300b3', '#9a009a', '#800080', '#670067', '#4d004d', '#340034']};  // pink to purple
+var visParamsEvapFrac = {min:0, max:2, palette:['yellow','orange', 'red', 'brown']};
+var visParamsLatentHeatFlux = {min: -5, max: 700, palette: ['#0000FF', '#00FF00', '#FF0000']};
+var visParamsET = {min: 0, max: 5, palette: ['#FF0000', '#00FF00', '#0000FF']}; // Red, Green, Blue
+
+Map.addLayer(landsat_collection_mosaic.select('Daily_Evapotranspiration'), visParamsET, 'Monthly mean ET', false);
+Map.addLayer(VisImage, visParamsTrue, 'Landsat image (RBG)', false);
+Map.addLayer(VisImage.select('Surface_Temperature'), visParamsTemperature, 'Surface temperature', false);
+Map.addLayer(VisImage.select(['Albedo']), visParamsAlbedo, 'Albedo', false);
+Map.addLayer(VisImage.select('Evaporative_Fraction_original'), visParamsEvapFrac, 'Evaporation_Fraction_original', false);
+Map.addLayer(VisImage.select('Evaporative_Fraction'), visParamsEvapFrac, 'Evaporation_Fraction', false);
+Map.addLayer(VisImage.select('Latent_Heat_Flux'), visParamsLatentHeatFlux, 'Latent heat flux', false);
+Map.addLayer(VisImage.select('Daily_Evapotranspiration'), visParamsET, 'Evapotranspiration', false);
+Map.addLayer(Guadalquivir_basin, {'color':'blue'}, 'Guadalquivir basin', false);
+Map.addLayer(poi, {}, 'poi', false);
+
+
+// Create a legend
+// set position of panel
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+ 
+// Create legend title
+var legendTitle = ui.Label({
+  value: 'Daily ET (mm)',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '18px',
+    margin: '0 0 4px 0',
+    padding: '0'
+    }
+});
+
+ // Add the title to the panel
+legend.add(legendTitle); 
+
+// create the legend image
+var lon = ee.Image.pixelLonLat().select('latitude');
+var gradient = lon.multiply((visParamsET.max-visParamsET.min)/100.0).add(visParamsET.min);
+var legendImage = gradient.visualize(visParamsET);
+
+// create text on top of legend
+var panel = ui.Panel({
+    widgets: [
+      ui.Label(visParamsET['max'])
+    ],
+  });
+
+legend.add(panel);
+  
+// create thumbnail from the image
+var thumbnail = ui.Thumbnail({
+  image: legendImage, 
+  params: {bbox:'0,0,10,100', dimensions:'10x200'},  
+  style: {padding: '1px', position: 'bottom-center'}
+});
+
+// add the thumbnail to the legend
+legend.add(thumbnail);
+
+// create text on top of legend
+var panel = ui.Panel({
+    widgets: [
+      ui.Label(visParamsET['min'])
+    ],
+  });
+
+legend.add(panel);
+
+Map.add(legend);

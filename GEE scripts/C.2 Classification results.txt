@@ -1,0 +1,286 @@
+
+
+
+/// SIOSE RASTERS \\\
+
+var SIOSE_raster_2005 = ee.Image('users/erikjan22/SIOSE_rasters/SIOSE_raster_2005');
+var SIOSE_raster_2011 = ee.Image('users/erikjan22/SIOSE_rasters/SIOSE_raster_2011');
+var SIOSE_raster_2014 = ee.Image('users/erikjan22/SIOSE_rasters/SIOSE_raster_2014');
+
+
+
+/// IRRIGATION CLASSIFICATIONS \\\
+var Irr_2000 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2000');
+var Irr_2001 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2001');
+var Irr_2002 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2002');
+var Irr_2004 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2004');
+var Irr_2005 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2005');
+var Irr_2006 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2006');
+var Irr_2007 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2007');
+var Irr_2008 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2008');
+var Irr_2009 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2009');
+var Irr_2010 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2010');
+var Irr_2011 = ee.Image('users/erikjan22/Irrigation/Irrigation_classification_L5_2011');
+
+// Region of interest
+var EU_Basins = ee.FeatureCollection('users/erikjan22/EU_Basins');
+var Guadalquivir_basin = EU_Basins.filter(ee.Filter.eq('country', 'ES')).filter(ee.Filter.eq('nameText', 'GUADALQUIVIR')).first()
+  // Take the geometry and simplify it (to make computations easier)
+  .geometry().simplify(250);
+  
+var EncompassingArea = ee.Geometry.Polygon(
+  [[-4.051003239053146,36.690101619278906],
+  [-2.831520817178146,36.962717034061036],
+  [-2.007546207803146,37.54859188064145], 
+  [-2.238259098428146,38.82653571741166], 
+  [-3.941139957803146,38.86931722139711], 
+  [-6.127419254678146,38.43174003276448], 
+  [-6.907448551553146,38.11261165391699], 
+  [-6.665749332803146,37.626943931163616], 
+  [-6.896462223428146,37.146839541616096], 
+  [-6.467995426553146,36.62840896552117], 
+  [-4.051003239053146,36.690101619278906]]);
+// Create the outline area (another geometry object) by subtracting GB from encompassing area
+var Outline = EncompassingArea.difference(Guadalquivir_basin, 0.01);
+// create a filter based on this outlining area
+var FilterOutsideRoi = ee.Filter.bounds(Outline).not();
+
+// Define the year of the SIOSE data
+var SIOSEyear = 2014;
+
+// Set the percentages of irrigated area for the entire feature to be labeled as 'irrigated'
+var Low_Irr_Percentage = 10;  // everything below this is labeled as non-irrigated (i.e. 0)
+var High_Irr_Percentage = 90;  // everything above this is labeled as irrigated (i.e. 1)
+
+// Import the necessary functions defined in another script.
+var VARIOUS_FUNCTIONS = require('users/erikjan22/Evapotranspiration:Main project/A. Various functions');
+
+// Import CORINE land use
+var CORINE2006 = ee.Image("COPERNICUS/CORINE/V20/100m/2006").clip(Guadalquivir_basin);
+
+// Change the labeling system of CORINE to reduce the 45 classes to only 5
+var artificial_surfaces          = CORINE2006.gte(100).and(CORINE2006.lt(200)).multiply(1);
+var agricultural_no_irrigation_1 = CORINE2006.eq(211).multiply(2);
+var agricultural_irrigation      = CORINE2006.gte(212).and(CORINE2006.lt(230)).multiply(3);
+var agricultural_no_irrigation_2 = CORINE2006.gte(230).and(CORINE2006.lt(300)).multiply(2);
+var forest_and_seminatural_areas = CORINE2006.gte(300).and(CORINE2006.lt(400)).multiply(4);
+var wetlands                     = CORINE2006.gte(400).and(CORINE2006.lt(500)).multiply(5);
+var water_bodies                 = CORINE2006.gte(500).and(CORINE2006.lt(600)).multiply(6);
+var New_Corine = artificial_surfaces.add(agricultural_irrigation).add(agricultural_no_irrigation_1).add(agricultural_no_irrigation_2).add(forest_and_seminatural_areas).add(wetlands).add(water_bodies);
+
+var SIOSEyearStr = SIOSEyear.toString();
+// Collect the SIOSE polygons for the relevant areas in Spain
+// Cut out relevant part of SIOSE data (polygons which completely fall within the Guadalquivir basin area)
+if (SIOSEyear == 2014) {
+  var SIOSE_And = ee.FeatureCollection('users/erikjan22/SIOSE_2014/SIOSE2014_And');
+}
+else {
+  var SIOSE_And_1 = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_And_1');
+  var SIOSE_And_2 = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_And_2');
+  var SIOSE_And_3 = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_And_3');
+  var SIOSE_And_4 = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_And_4');
+  var SIOSE_And = SIOSE_And_1.merge(SIOSE_And_2).merge(SIOSE_And_3).merge(SIOSE_And_4);
+}
+var SIOSE_Cas = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_Cas');
+var SIOSE_Ext = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_Ext');
+var SIOSE_Mur = ee.FeatureCollection('users/erikjan22/SIOSE_'+SIOSEyearStr+'/SIOSE'+SIOSEyearStr+'_Mur');
+
+// Merge all the SIOSE collections together and selection only the relevant polygons
+var SIOSEtotal = SIOSE_And.merge(SIOSE_Cas).merge(SIOSE_Ext).merge(SIOSE_Mur)
+  // Take out all polygons which are not (partly) located inside of the region of interestt
+  .filterBounds(Guadalquivir_basin);
+
+// Label the SIOSE polygons with irrigation information
+SIOSEtotal = VARIOUS_FUNCTIONS.SIOSE_Irrigation_Status(SIOSEtotal, Low_Irr_Percentage, High_Irr_Percentage);
+
+
+
+// State the projection and the scale of the Landsat scenes
+var imageProjection = 'EPSG:32630';
+var imageScale = 30;
+// Make an image out of the land area attribute.
+var SIOSEraster = SIOSEtotal
+  .reduceToImage({
+    properties: ['Irrigation_Percentage'],
+    reducer: ee.Reducer.first()
+  })
+  // Cut out all the areas outside of GB
+  .clip(Guadalquivir_basin)
+  // Set the elevation image to the same projection as other images
+  .reproject({crs: imageProjection, scale: imageScale});
+Export.image.toAsset({
+  image: SIOSEraster, 
+  description: 'Export_SIOSE_raster_'+SIOSEyearStr, 
+  assetId:'SIOSE_raster_'+SIOSEyearStr,
+  region: Guadalquivir_basin, 
+  scale:imageScale, 
+  crs:imageProjection,
+  maxPixels:250000000
+  });
+
+// counting pixel functions
+var countAllPixels = function(image) {
+  var nrPixels = image.reduceRegion({
+  'reducer':ee.Reducer.count(),
+  'geometry':Guadalquivir_basin,
+  'scale':30,
+  'maxPixels':1E13
+  }).get('CLASSIFICATION');
+  return nrPixels;
+};
+
+var countIrrigatedPixels = function(image, title) {
+  var nrPixels = image.reduceRegion({
+  'reducer':ee.Reducer.sum(),
+  'geometry':Guadalquivir_basin,
+  'scale':30,
+  'maxPixels':1E13
+  }).get('CLASSIFICATION');
+  return nrPixels;
+};
+
+// Visualization
+
+var Irrigated_years = [Irr_2000, Irr_2001, Irr_2002, Irr_2004, Irr_2005,
+                       Irr_2006, Irr_2007, Irr_2008, Irr_2009, Irr_2010, Irr_2011];
+var Irrigated_years_string = ['2000', '2001', '2002', '2004', '2005',
+                              '2006', '2007', '2008', '2009', '2010', '2011'];
+var list = ee.ImageCollection(Irrigated_years).toList(999);
+              var list = ee.ImageCollection(Irrigated_years).toList(999);
+var totalCount = Irr_2000.select('CLASSIFICATION').multiply(0);
+
+var palette1 = ['yellow', 'orange', 'red'];
+var palette2 = ['FFC30F', 'FF5733', 'C70039', '900C3F', '581845'];
+
+var Vis_irrigation = {min:0, max:1, palette:palette1};
+var irr_threshold = 0.7;
+for (var i=0; i<Irrigated_years.length; i++) {
+ var image = ee.Image(list.get(i));
+ var nrPixels = countAllPixels(image);
+ var nrIrrPixels = countIrrigatedPixels(image);
+ var year = Irrigated_years_string[i].toString();
+ print('Irrigation classification '+ year +':',
+      'Total number of pixels: ', nrPixels, 
+      'Corresponds to area (square km): ', ee.Number(nrPixels).multiply(0.0009),
+      'Number of irrigated pixels: ', nrIrrPixels, 
+      'Corresponds to area (square km): ', ee.Number(nrIrrPixels).multiply(0.0009));
+  Map.addLayer(image.select('CLASSIFICATION'), Vis_irrigation, year+'-IR OG class', false);
+  Map.addLayer(image.select('PROBABILITY'), Vis_irrigation, year+'-IR prob', false);  
+  Map.addLayer(image.select('PROBABILITY').gte(irr_threshold), Vis_irrigation, year+'-IR TH class', false);
+  totalCount = totalCount.add(image.select('CLASSIFICATION'));
+}
+var visPalette = {min:0, max:11, palette:['red', 'orange', 'yellow', 'green', '#006400']};
+Map.addLayer(totalCount, visPalette, 'TotalCount');
+
+Map.addLayer(Guadalquivir_basin, {color: 'blue'}, 'Guadalquivir basin');
+var NewCorinePalette = ['FFFF33','FF0000','09E75C', '00A600', 'E6E600','FFE6A6','FF4DFF'];
+
+Map.addLayer(SIOSEtotal, {color: 'black'}, 'SIOSE '+SIOSEyearStr, false);
+Map.addLayer(SIOSE_raster_2005.divide(100), Vis_irrigation, 'SIOSE_raster_2005_fraction');
+Map.addLayer(SIOSE_raster_2011.divide(100), Vis_irrigation, 'SIOSE_raster_2011_fraction');
+Map.addLayer(SIOSE_raster_2014.divide(100), Vis_irrigation, 'SIOSE_raster_2014_fraction');
+print('SIOSE raster', SIOSE_raster_2011);
+
+
+/// SAMPLING \\\
+var Samples = Irr_2011.select('PROBABILITY')
+  .addBands(SIOSE_raster_2011.divide(100))
+  .rename(['classified_irr_probability', 'SIOSE_irr_fraction'])
+  .sample({
+    region:Guadalquivir_basin,
+    numPixels:1000000
+  });
+
+Export.table.toDrive({
+  collection:Samples,
+  description: 'Export_irrigation_classification_sample',
+  folder:'GEE_exports',
+  fileNamePrefix: 'Samples_irrigation_classification'
+});
+
+
+
+// Post processing
+
+// Use erosion and dilation to get rid of small islands.
+var IR_classPost = Irr_2011.select('CLASSIFICATION').focal_min(2).focal_max(2).focal_min(1); // focas_min = erosion, focal_max = dilation 
+// Reprojection is needed to illustrate what changed due to morphological operations
+var IR_classPost = IR_classPost.reproject('EPSG:32630', null, 30);
+Map.addLayer(IR_classPost, {min: 0, max: 1, color: 'black'}, 'Irrigation class 2011 post', false);
+
+
+
+//// 2 SEASONS \\\\
+
+print('Seasonal results of S-SEBI', Seasonal_ET);
+var col = Seasonal_ET
+  .filterMetadata('year', 'equals', 2011)
+  //.filterMetadata('season','equals','summer')
+  .filterMetadata('landsat_edition', 'equals', 'L5');
+
+col = col.toList(999);
+var VisET = {min:0, max:6, palette:['red', 'green', 'blue']};
+Map.addLayer(ee.Image(col.get(0)).select('Daily_Evapotranspiration'), VisET, 'ET 2011-S [L5]', false)
+Map.addLayer(ee.Image(col.get(1)).select('Daily_Evapotranspiration'), VisET, 'ET 2011-W [L5]', false)
+
+
+
+/// LEGEND \\\
+
+// Create a legend
+// set position of panel
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+ 
+// Create legend title
+var legendTitle = ui.Label({
+  value: 'Sum',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '18px',
+    margin: '0 0 4px 0',
+    padding: '0'
+    }
+});
+
+ // Add the title to the panel
+legend.add(legendTitle); 
+
+// create the legend image
+var lon = ee.Image.pixelLonLat().select('latitude');
+var gradient = lon.multiply((visPalette.max-visPalette.min)/100.0).add(visPalette.min);
+var legendImage = gradient.visualize(visPalette);
+
+// create text on top of legend
+var panel = ui.Panel({
+    widgets: [
+      ui.Label(visPalette['max'])
+    ],
+  });
+
+legend.add(panel);
+  
+// create thumbnail from the image
+var thumbnail = ui.Thumbnail({
+  image: legendImage, 
+  params: {bbox:'0,0,10,100', dimensions:'10x200'},  
+  style: {padding: '1px', position: 'bottom-center'}
+});
+
+// add the thumbnail to the legend
+legend.add(thumbnail);
+
+// create text on top of legend
+var panel = ui.Panel({
+    widgets: [
+      ui.Label(visPalette['min'])
+    ],
+  });
+
+legend.add(panel);
+
+Map.add(legend);
