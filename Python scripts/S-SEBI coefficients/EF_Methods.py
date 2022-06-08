@@ -1,5 +1,12 @@
 
-### --- AUTHORS NOTE --- ###
+"""MAPPING TIME-SERIES EVAPOTRANSPIRATION FOR AGRICULTURAL APPLICATIONS
+A CASE STUDY IN GUIDALQUIVIR RIVER BASIN
+Full report: http://uu.diva-portal.org/smash/get/diva2:1579426/FULLTEXT01.pdf
+Erik Bootsma - June 2021 - Uppsala University
+Contact: erik_jan_22@hotmail.com
+
+AUTHORS NOTE:
+This script is used to store two functions which use an edge-fitting algorithm to compute EF-coefficients."""
 
 
 def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantile, LowestAlbedoFraction, HeighestAlbedoFraction, DisplayResults=False):
@@ -68,7 +75,7 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 						EXTvalue = DATAsubinterval.loc[DATAsubinterval['LST'].idxmax()]
 					else:
 						EXTvalue = DATAsubinterval.loc[DATAsubinterval['LST'].idxmin()]
-					ExtItemsInterval = ExtItemsInterval.append({'LSText':EXTvalue.LST, 'AlbedoExt':EXTvalue.Albedo}, ignore_index=True)
+					ExtItemsInterval = pd.concat([ExtItemsInterval, pd.DataFrame({'LSText':EXTvalue.LST, 'AlbedoExt':EXTvalue.Albedo}, index=[0])], ignore_index=True)
 			# Count the number of items in the collection of extreme data points
 			Ncurrent = len(ExtItemsInterval.index)
 			# Compute the average of the extreme LST values
@@ -98,7 +105,7 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 			# Compute the average albedo value for the remaining items
 			AlbedoAvg = ExtItemsInterval.AlbedoExt.mean()
 			# Now that the outliers have been eliminated, we can store the results for the current interval
-			OptimalItems = OptimalItems.append({'LSTopt':LSTavg, 'AlbedoOpt':AlbedoAvg}, ignore_index=True)
+			OptimalItems = pd.concat([OptimalItems, pd.DataFrame({'LSTopt':LSTavg, 'AlbedoOpt':AlbedoAvg}, index=[0])], ignore_index=True)
 
 
 		### PART II ###
@@ -109,11 +116,11 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 		PartIIData = OptimalItems[(OptimalItems.AlbedoOpt > OptimalItems.AlbedoOpt.quantile(LowestAlbedoFraction)) & (OptimalItems.AlbedoOpt < OptimalItems.AlbedoOpt.quantile(HeighestAlbedoFraction))]
 		if DRY_EDGE:
 			# Find the albedo of the item with the maximum LST value from the lower range of albedo values and remove all those items with a lower albedo value
-			MaxLSTitem = PartIIData.loc[PartIIData.LSTopt.idxmax()]
+			MaxLSTitem = PartIIData.loc[pd.to_numeric(PartIIData.LSTopt).idxmax()]
 			OptimalItemsRevised = OptimalItems[OptimalItems.AlbedoOpt >= MaxLSTitem.AlbedoOpt]
 		else:
 			# Find the albedo of the item with the minimum LST value and remove all those items with a lower albedo value
-			MinLSTitem = PartIIData.loc[PartIIData.LSTopt.idxmin()]
+			MinLSTitem = PartIIData.loc[pd.to_numeric(PartIIData.LSTopt).idxmin()]
 			OptimalItemsRevised = OptimalItems[OptimalItems.AlbedoOpt >= MinLSTitem.AlbedoOpt]
 		
 
@@ -164,8 +171,8 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 	# If a 'dry item' falls above the wet edge it should be remove
 	# Add values to the beginning and end of the array of albedo values
 	# Produce predictions
-	PredictDryItemsWithWetEdge = WetEdge.predict(np.array(DryOptItemsRevised.AlbedoOpt).reshape((-1, 1)))
-	PredictWetItemsWithDryEdge = DryEdge.predict(np.array(WetOptItemsRevised.AlbedoOpt).reshape((-1, 1)))
+	#PredictDryItemsWithWetEdge = WetEdge.predict(np.array(DryOptItemsRevised.AlbedoOpt).reshape((-1, 1)))
+	#PredictWetItemsWithDryEdge = DryEdge.predict(np.array(WetOptItemsRevised.AlbedoOpt).reshape((-1, 1)))
 	# Filter out the items which fall outside the bounds of the 'other' edge
 	#DryOptItemsRevised = DryOptItemsRevised[DryOptItemsRevised.LSTopt > PredictDryItemsWithWetEdge]
 	#WetOptItemsRevised = WetOptItemsRevised[WetOptItemsRevised.LSTopt < PredictWetItemsWithDryEdge]
@@ -189,8 +196,8 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 
 
 	### DISPLAY RESULTS ###
+    # Report the results to the user if so required 
 	if DisplayResults:
-		# Print results
 		print('\n      Results of Dry Edge:')
 		print('      Coefficient of determination:', DryEdge_score)
 		print('      Slope coefficient:', DryEdge_a)
@@ -230,7 +237,7 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 			else:
 				MedianLSTs = np.append(MedianLSTs, np.median(DATAinterval.LST))
 
-		# Plot
+		# Visualize the results on a scatter plot
 		plt.scatter(DATA.Albedo, DATA.LST, c='blue', s = 10, label="Data point")
 		plt.scatter(DryOptItems.AlbedoOpt, DryOptItems.LSTopt, c='red', s = 50)
 		plt.scatter(DryOptItemsRevised.AlbedoOpt, DryOptItemsRevised.LSTopt, c='black', s = 15)
@@ -238,7 +245,6 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 		plt.scatter(WetOptItems.AlbedoOpt, WetOptItems.LSTopt, c='green', s = 50)
 		plt.scatter(WetOptItemsRevised.AlbedoOpt, WetOptItemsRevised.LSTopt, c='black', s = 15)
 		plt.plot(WetAlbedoPrediction, WetPrediction,color='green',linestyle='dashed',linewidth=2, label="Wet edge")
-		#plt.plot(MeanAlbedos, MedianLSTs,color='black',linestyle='solid',linewidth=3, label="Median line")
 		plt.legend(loc="upper right", prop={'size': 15})
 		plt.tick_params(axis='x', labelsize=15)
 		plt.tick_params(axis='y', labelsize=15)
@@ -251,112 +257,118 @@ def TANG_Method(DATA, N, MaxStdDev, Nmin, M, RSMEmultiplier, Mmin, AlbedoQuantil
 
 
 
+def SPLIT_Method(DATA, AlbedoStep, AlbedoQuantile, UpperQuantile, LowerQuantile, DisplayResults=False): 
+    """Def: Compute the coefficients of the evaporative fraction (EF) using the SPLIT method.
+	Args:
+		DATA []: 
+        AlbedoStep []: 
+        AlbedoQuantile []: 
+        UpperQuantile []: 
+        LowerQuantile []: 
+    Returns:
+		...
+	Example:
+		..."""    
 
-def SPLIT_Method(DATA, AlbedoStep, AlbedoQuantile, UpperQuantile, LowerQuantile, DisplayResults=False):
-	"""Compute the coefficients of the evaporative fraction (EF) using the SPLIT method.
-	AlbedoStep = 0.01
-	UpperQuantile = 0.97
-	LowerQuantile = 0.03"""
-
-	### INITIALIZATION ###
-	import matplotlib.pyplot as plt
-	import pandas as pd
-	from sklearn.linear_model import LinearRegression
-	import numpy as np
+    ### INITIALIZATION ###
+    import matplotlib.pyplot as plt
+    from sklearn.linear_model import LinearRegression
+    import numpy as np
 
 	# Find the maximum albedo value. This will be the end of the spectrum of albedo values which we'll inspect
-	StopAlbedo = DATA.Albedo.quantile(1-AlbedoQuantile)
+    StartAlbedo = DATA.Albedo.quantile(AlbedoQuantile)
+    StopAlbedo = DATA.Albedo.quantile(1-AlbedoQuantile)   
 
 	### COLLECT MAX LST VALUES ###
 	# Create list of top 1% of LST values
-	MaxLSTs = DATA[DATA.LST >= DATA.LST.quantile(0.99)]
+    MaxLSTs = DATA[DATA.LST >= DATA.LST.quantile(0.99)]
 	# From the list of top 1% LST values, find the minimum albedo value
-	AlbdOfMaxLST = DATA.Albedo.iloc[MaxLSTs.idxmin().Albedo]
+    AlbdOfMaxLST = DATA.Albedo.iloc[MaxLSTs.idxmin().Albedo]
 	# Create a range of albedo values which will be inspected
-	RangeOfAlb = np.arange(AlbdOfMaxLST, StopAlbedo, AlbedoStep)
-	MeanMaxValues = np.array([])
-	MaxAlbedoValues = np.array([])
-	for alb_current in RangeOfAlb:
-		DATAsubset = DATA[(DATA.Albedo >= alb_current) & (DATA.Albedo < alb_current+AlbedoStep)]
+    RangeOfAlb = np.arange(AlbdOfMaxLST, StopAlbedo, AlbedoStep)
+    MeanMaxValues = np.array([])
+    MaxAlbedoValues = np.array([])
+    for alb_current in RangeOfAlb:
+        DATAsubset = DATA[(DATA.Albedo >= alb_current) & (DATA.Albedo < alb_current+AlbedoStep)]
 		# We only need LST values now
-		DATAsubset = DATAsubset.LST
+        DATAsubset = DATAsubset.LST
 		# Find maximum values
-		top_percentile = DATAsubset.quantile(UpperQuantile)
-		MaxLSTValues = DATAsubset[DATAsubset >= top_percentile]
+        top_percentile = DATAsubset.quantile(UpperQuantile)
+        MaxLSTValues = DATAsubset[DATAsubset >= top_percentile]
 		# Add values. Only do this if there is actually a value
-		if len(MaxLSTValues):
-			MeanMaxLST = MaxLSTValues.mean()
-			Albedo_value = np.mean([alb_current, alb_current+AlbedoStep])
-			MaxAlbedoValues = np.append(MaxAlbedoValues, Albedo_value)
-			MeanMaxValues = np.append(MeanMaxValues, MeanMaxLST)
-	MaxAlbedoValues = MaxAlbedoValues.reshape((-1, 1))
-	DryEdge = LinearRegression().fit(MaxAlbedoValues, MeanMaxValues)
-	DryEdge_a = DryEdge.coef_[0]
-	DryEdge_b = DryEdge.intercept_
+        if len(MaxLSTValues):
+            MeanMaxLST = MaxLSTValues.mean()
+            Albedo_value = np.mean([alb_current, alb_current+AlbedoStep])
+            MaxAlbedoValues = np.append(MaxAlbedoValues, Albedo_value)
+            MeanMaxValues = np.append(MeanMaxValues, MeanMaxLST)
+    MaxAlbedoValues = MaxAlbedoValues.reshape((-1, 1))
+    DryEdge = LinearRegression().fit(MaxAlbedoValues, MeanMaxValues)
+    DryEdge_a = DryEdge.coef_[0]
+    DryEdge_b = DryEdge.intercept_
 	
 
 	### COLLECT MIN LST VALUES ###
 	# Create list of bottom 1% of LST values
-	MinLSTs = DATA[DATA.LST >= DATA.LST.quantile(0.01)]
+    MinLSTs = DATA[DATA.LST >= DATA.LST.quantile(0.01)]
 	# From the list of bottom 1% LST values, find the minimum albedo value
-	AlbdOfMinLST = DATA.Albedo.iloc[MinLSTs.idxmin().Albedo]
+    AlbdOfMinLST = DATA.Albedo.iloc[MinLSTs.idxmin().Albedo]
 	# Create a range of albedo values which will be inspected
-	RangeOfAlb = np.arange(AlbdOfMinLST, StopAlbedo, AlbedoStep)
-	MeanMinValues = np.array([])
-	MinAlbedoValues = np.array([])
+    RangeOfAlb = np.arange(AlbdOfMinLST, StopAlbedo, AlbedoStep)
+    MeanMinValues = np.array([])
+    MinAlbedoValues = np.array([])
 
-	for alb_current in RangeOfAlb:
-		# Select the subsection corresponding with the current section of albedo values 
-		DATAsubset = DATA[(DATA.Albedo >= alb_current) & (DATA.Albedo < alb_current+AlbedoStep)]
-		# We only need LST values now
-		DATAsubset = DATAsubset.LST
+    for alb_current in RangeOfAlb:
+        # Select the subsection corresponding with the current section of albedo values 
+        DATAsubset = DATA[(DATA.Albedo >= alb_current) & (DATA.Albedo < alb_current+AlbedoStep)]
+        # We only need LST values now
+        DATAsubset = DATAsubset.LST
 		# Find minimum values
-		bottom_percentile = DATAsubset.quantile(LowerQuantile)
-		MinLSTValues = DATAsubset[DATAsubset <= bottom_percentile]
+        bottom_percentile = DATAsubset.quantile(LowerQuantile)
+        MinLSTValues = DATAsubset[DATAsubset <= bottom_percentile]
 		# Add values. Only do this if there is actually a value
-		if len(MinLSTValues) > 0:
-			MeanMinLST = MinLSTValues.mean()
-			Albedo_value = np.mean([alb_current, alb_current+AlbedoStep])
-			MinAlbedoValues = np.append(MinAlbedoValues, Albedo_value)
-			MeanMinValues = np.append(MeanMinValues, MeanMinLST)
-	MinAlbedoValues = MinAlbedoValues.reshape((-1, 1))
-	WetEdge = LinearRegression().fit(MinAlbedoValues, MeanMinValues)
-	WetEdge_a = WetEdge.coef_[0]
-	WetEdge_b = WetEdge.intercept_
+        if len(MinLSTValues) > 0:
+            MeanMinLST = MinLSTValues.mean()
+            Albedo_value = np.mean([alb_current, alb_current+AlbedoStep])
+            MinAlbedoValues = np.append(MinAlbedoValues, Albedo_value)
+            MeanMinValues = np.append(MeanMinValues, MeanMinLST)
+    MinAlbedoValues = MinAlbedoValues.reshape((-1, 1))
+    WetEdge = LinearRegression().fit(MinAlbedoValues, MeanMinValues)
+    WetEdge_a = WetEdge.coef_[0]
+    WetEdge_b = WetEdge.intercept_
 
-	if DisplayResults:
-		### PRINT RESULTS
-		DryEdge_score = DryEdge.score(MaxAlbedoValues, MeanMaxValues)
-		WetEdge_score = WetEdge.score(MinAlbedoValues, MeanMinValues)
-		print('Results of Dry Edge:')
-		print('coefficient of determination:', DryEdge_score)
-		print('slope:', DryEdge_a)
-		print('intercept:', DryEdge_b, '\n')
-		print('Results of Wet Edge:')
-		print('coefficient of determination:', WetEdge_score)
-		print('slope:', WetEdge_a)
-		print('intercept:', WetEdge_b, '\n')
+    ### DISPLAY RESULTS ###
+    # Report the results to the user if so required 
+    if DisplayResults:
+        DryEdge_score = DryEdge.score(MaxAlbedoValues, MeanMaxValues)
+        WetEdge_score = WetEdge.score(MinAlbedoValues, MeanMinValues)
+        print('Results of Dry Edge:')
+        print('coefficient of determination:', DryEdge_score)
+        print('slope:', DryEdge_a)
+        print('intercept:', DryEdge_b, '\n')
+        print('Results of Wet Edge:')
+        print('coefficient of determination:', WetEdge_score)
+        print('slope:', WetEdge_a)
+        print('intercept:', WetEdge_b, '\n')
 
-		print(StartAlbedo, StopAlbedo)
+        print(StartAlbedo, StopAlbedo)
 
 		### PRODUCE PREDICTIONS ###
-		#MaxAlbedoValuesPrediction = np.append(np.append(MaxAlbedoValues[0]-0.1, MaxAlbedoValues), MaxAlbedoValues[-1]+0.1).reshape((-1, 1))
-		#MinAlbedoValuesPrediction = np.append(np.append(MinAlbedoValues[0]-0.1, MinAlbedoValues), MinAlbedoValues[-1]+0.1).reshape((-1, 1))
-		MaxAlbedoValuesPrediction = np.append(np.append(StartAlbedo, MaxAlbedoValues), StopAlbedo[-1]+0.1).reshape((-1, 1))
-		MinAlbedoValuesPrediction = np.append(np.append(StartAlbedo, MinAlbedoValues), StopAlbedo[-1]+0.1).reshape((-1, 1))
+        MaxAlbedoValuesPrediction = np.append(np.append(StartAlbedo, MaxAlbedoValues), StopAlbedo[-1]+0.1).reshape((-1, 1))
+        MinAlbedoValuesPrediction = np.append(np.append(StartAlbedo, MinAlbedoValues), StopAlbedo[-1]+0.1).reshape((-1, 1))
 
-		DryResults = DryEdge.predict(MaxAlbedoValuesPrediction)
-		WetResults = WetEdge.predict(MinAlbedoValuesPrediction) 
+        DryResults = DryEdge.predict(MaxAlbedoValuesPrediction)
+        WetResults = WetEdge.predict(MinAlbedoValuesPrediction) 
 		
 		### PLOT ###
-		plt.scatter(DATA.Albedo, DATA.LST, c='blue', s = 10)
-		plt.scatter(MaxAlbedoValues, MeanMaxValues, c='red', s = 30)
-		plt.plot(MaxAlbedoValuesPrediction, DryResults,color='red',linestyle='dashed',linewidth=2)
-		plt.scatter(MinAlbedoValues, MeanMinValues, c='green', s = 30)
-		plt.plot(MinAlbedoValuesPrediction, WetResults, color='green',linestyle='dashed',linewidth=2)
-		plt.title('SPLIT METHOD: Scatter plot Albedo - Landsurface temperature')
-		plt.xlabel('Albedo')
-		plt.ylabel('LST (K)')
-		plt.show()
+        plt.scatter(DATA.Albedo, DATA.LST, c='blue', s = 10)
+        plt.scatter(MaxAlbedoValues, MeanMaxValues, c='red', s = 30)
+        plt.plot(MaxAlbedoValuesPrediction, DryResults,color='red',linestyle='dashed',linewidth=2)
+        plt.scatter(MinAlbedoValues, MeanMinValues, c='green', s = 30)
+        plt.plot(MinAlbedoValuesPrediction, WetResults, color='green',linestyle='dashed',linewidth=2)
+        plt.title('SPLIT METHOD: Scatter plot Albedo - Landsurface temperature')
+        plt.xlabel('Albedo')
+        plt.ylabel('LST (K)')
+        plt.show()
 
-	return [DryEdge_a, DryEdge_b, WetEdge_a, WetEdge_b]
+    return [DryEdge_a, DryEdge_b, WetEdge_a, WetEdge_b]
+
